@@ -2,7 +2,7 @@
  * Copyright (c) 2022 EdgeImpulse Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * you y not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  * http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -239,6 +239,7 @@ extern "C" EI_IMPULSE_ERROR process_impulse(ei_impulse_handle_t *handle,
 
     memset(result, 0, sizeof(ei_impulse_result_t));
     uint32_t block_num = handle->impulse->dsp_blocks_size + handle->impulse->learning_blocks_size;
+    ei_printf("block num: %i\n", block_num);
 
     // smart pointer to features array
     std::unique_ptr<ei_feature_t[]> features_ptr(new ei_feature_t[block_num]);
@@ -331,6 +332,7 @@ extern "C" EI_IMPULSE_ERROR process_impulse(ei_impulse_handle_t *handle,
             if (features[ix].matrix == nullptr) {
                 continue;
             }
+            ei_printf("matrix rows: %i cols: %i\n", features[ix].matrix->rows, features[ix].matrix->cols);
             for (size_t jx = 0; jx < features[ix].matrix->cols; jx++) {
                 ei_printf_float(features[ix].matrix->buffer[jx]);
                 ei_printf(" ");
@@ -452,6 +454,7 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
     result->timing.dsp = (int)(result->timing.dsp_us / 1000);
 
     if (debug) {
+        ei_printf("number of features: %i rows: %i", static_features_matrix.cols, static_features_matrix.rows);
         ei_printf("\r\nFeatures (%d ms.): ", result->timing.dsp);
         for (size_t ix = 0; ix < static_features_matrix.cols; ix++) {
             ei_printf_float(static_features_matrix.buffer[ix]);
@@ -459,6 +462,7 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
         }
         ei_printf("\n");
     }
+
 
     if (classifier_continuous_features_written >= impulse->nn_input_frame_size) {
         dsp_start_us = ei_read_timer_us();
@@ -487,6 +491,7 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
             }
 
             if (block.extract_fn == extract_mfcc_features) {
+                //this is what's running
                 calc_cepstral_mean_and_var_normalization_mfcc(features[ix].matrix, block.config);
             }
             else if (block.extract_fn == extract_spectrogram_features) {
@@ -500,6 +505,15 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
 
         result->timing.dsp_us += ei_read_timer_us() - dsp_start_us;
         result->timing.dsp = (int)(result->timing.dsp_us / 1000);
+
+
+        ei_printf("\r\nFeatures (%d ms.): ", result->timing.dsp);
+
+        ei_printf("number of filtered features: %i rows: %i", features[0].matrix->cols,  features[0].matrix->rows);
+        for (size_t ix = 0; ix < features[0].matrix->cols; ix++) {
+            ei_printf_float( features[0].matrix->buffer[ix]);
+            ei_printf(" ");
+        }
 
         if (debug) {
             ei_printf("Running impulse...\n");
