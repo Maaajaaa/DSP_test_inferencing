@@ -578,6 +578,101 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
 }
 
 /**
+ * @brief      Process just the mfcc and normalizing/filter
+ *
+ * @param      impulse  struct with information about model and DSP
+ * @param      signal   Sample data
+ * @param      output   output of mfcc and filtering + normalizing
+ * @param[in]  debug    Debug output enable
+ *
+ * @return     The ei impulse error.
+ */
+int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
+                                            signal_t *signal,
+                                            ei::matrix_t *output_matrix,
+                                            bool debug,
+                                            bool enable_maf)
+{
+    auto impulse = handle->impulse;
+    static ei::matrix_t static_features_matrix(1, impulse->nn_input_frame_size);
+    if (!static_features_matrix.buffer) {
+        return EI_IMPULSE_ALLOC_FAILED;
+    }
+
+    memset(output_matrix, 0, sizeof(ei::matrix_t));
+
+    uint64_t dsp_start_us = ei_read_timer_us();
+    uint64_t timing_dsp_us = 0;
+
+    size_t out_features_index = 0;
+
+    for (size_t ix = 0; ix < impulse->dsp_blocks_size; ix++) {
+        ei_model_dsp_t block = impulse->dsp_blocks[ix];
+
+        if (out_features_index + block.n_output_features > impulse->nn_input_frame_size) {
+            ei_printf("ERR: Would write outside feature buffer\n");
+            return EI_IMPULSE_DSP_ERROR;
+        }
+
+        ei::matrix_t fm(1, block.n_output_features,
+                        static_features_matrix.buffer + out_features_index);
+
+        int (*extract_fn_slice)(ei::signal_t *signal, ei::matrix_t *output_matrix, void *config, const float frequency, matrix_size_t *out_matrix_size);
+
+        /* Switch to the slice version of the mfcc feature extract function */
+        if (block.extract_fn == extract_mfcc_features) {
+            extract_fn_slice = &extract_mfcc_per_slice_features;
+        }
+        else {
+            ei_printf("ERR: Unknown extract function, only MFCC, MFE and spectrogram supported\n");
+            return EI_IMPULSE_DSP_ERROR;
+        }
+
+        matrix_size_t features_written;
+
+#if EIDSP_SIGNAL_C_FN_POINTER
+        if (block.axes_size != impulse->raw_samples_per_frame) {
+            ei_printf("ERR: EIDSP_SIGNAL_C_FN_POINTER can only be used when all axes are selected for DSP blocks\n");
+            return EI_IMPULSE_DSP_ERROR;
+        }
+        int ret = extract_fn_slice(signal, &fm, block.config, impulse->frequency, &features_written);
+#else
+        SignalWithAxes swa(signal, block.axes, block.axes_size, impulse);
+        int ret = extract_fn_slice(swa.get_signal(), &fm, block.config, impulse->frequency, &features_written);
+#endif
+
+        if (ret != EIDSP_OK) {
+            ei_printf("ERR: Failed to run DSP process (%d)\n", ret);
+            return EI_IMPULSE_DSP_ERROR;
+        }
+
+        if (ei_run_impulse_check_canceled() == EI_IMPULSE_CANCELED) {
+            return EI_IMPULSE_CANCELED;
+        }
+
+        classifier_continuous_features_written += (features_written.rows * features_written.cols);
+
+        out_features_index += block.n_output_features;
+    }
+
+    timing_dsp_us = ei_read_timer_us() - dsp_start_us;
+    int timing_dsp = (int)(timing_dsp_us / 1000);
+
+    if (debug) {
+        ei_printf("number of features: %i rows: %i", static_features_matrix.cols, static_features_matrix.rows);
+        ei_printf("\r\nFeatures (%d ms.): ", timing_dsp);
+        for (size_t ix = 0; ix < static_features_matrix.cols; ix++) {
+            ei_printf_float(static_features_matrix.buffer[ix]);
+            ei_printf(" ");
+        }
+        ei_printf("\n");
+    }
+
+
+    return EI_IMPULSE_OK;
+}
+
+/**
  * Check if the current impulse could be used by 'run_classifier_image_quantized'
  */
 __attribute__((unused)) static EI_IMPULSE_ERROR can_run_classifier_image_quantized(const ei_impulse_t *impulse, ei_learning_block_t block_ptr) {
@@ -611,7 +706,7 @@ __attribute__((unused)) static EI_IMPULSE_ERROR can_run_classifier_image_quantiz
         return EI_IMPULSE_ONLY_SUPPORTED_FOR_IMAGES;
     }
 
-    return EI_IMPULSE_OK;
+    return 1;
 }
 
 #if EI_CLASSIFIER_QUANTIZATION_ENABLED == 1 && (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE || EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TENSAIFLOW || EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_DRPAI || EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_ONNX_TIDL)
@@ -829,6 +924,28 @@ extern "C" EI_IMPULSE_ERROR run_classifier_continuous(
     auto& impulse = ei_default_impulse;
     return process_impulse_continuous(&impulse, signal, result, debug, enable_maf);
 }
+
+
+
+/**
+ * @brief      Fill the complete matrix with sample slices. From there, just run MFCC.
+ *
+ * @param      signal  Sample data
+ * @param      output_matrix output data
+ * @param[in]  debug   Debug output enable boot
+ *
+ * @return     The ei impulse error.
+ */
+int run_mfcc_maaajaaa(
+    signal_t *signal,
+    ei::matrix_t *output_matrix,
+    bool debug = false,
+    bool enable_maf = true)
+{
+    auto& impulse = ei_default_impulse;
+    return process_mfcc_maaajaaa(&impulse, signal, output_matrix, debug, enable_maf);
+}
+
 
 /**
  * @brief      Fill the complete matrix with sample slices. From there, run impulse
