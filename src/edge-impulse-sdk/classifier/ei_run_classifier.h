@@ -669,7 +669,7 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
     }
 
 
-    return EI_IMPULSE_OK;
+    return 1;
 }
 
 /**
@@ -706,7 +706,7 @@ __attribute__((unused)) static EI_IMPULSE_ERROR can_run_classifier_image_quantiz
         return EI_IMPULSE_ONLY_SUPPORTED_FOR_IMAGES;
     }
 
-    return 1;
+    return EI_IMPULSE_OK;
 }
 
 #if EI_CLASSIFIER_QUANTIZATION_ENABLED == 1 && (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE || EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TENSAIFLOW || EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_DRPAI || EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_ONNX_TIDL)
