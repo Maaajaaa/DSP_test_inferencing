@@ -508,12 +508,14 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
 
 
         ei_printf("\r\nFeatures (%d ms.): ", result->timing.dsp);
-
-        ei_printf("number of filtered features: %i rows: %i", features[0].matrix->cols,  features[0].matrix->rows);
-        for (size_t ix = 0; ix < features[0].matrix->cols; ix++) {
-            ei_printf_float( features[0].matrix->buffer[ix]);
-            ei_printf(" ");
+        if(debug){
+            ei_printf("number of filtered features: %i rows: %i", features[0].matrix->cols,  features[0].matrix->rows);
+            for (size_t ix = 0; ix < features[0].matrix->cols; ix++) {
+                ei_printf_float( features[0].matrix->buffer[ix]);
+                ei_printf(" ");
+            }
         }
+        
 
         if (debug) {
             ei_printf("Running impulse...\n");
