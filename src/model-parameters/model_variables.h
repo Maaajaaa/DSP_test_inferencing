@@ -128,9 +128,9 @@ const ei_impulse_t impulse_409114_0 = {
     .deploy_version = 1,
 
     .nn_input_frame_size = 650,
-    .raw_sample_count = 16000,
+    .raw_sample_count = 533, //about 30fps
     .raw_samples_per_frame = 1,
-    .dsp_input_frame_size = 16000 * 1,
+    .dsp_input_frame_size = 533 * 1, //about 30fps
     .input_width = 0,
     .input_height = 0,
     .input_frames = 0,

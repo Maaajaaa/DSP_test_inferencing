@@ -599,7 +599,7 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
         return EI_IMPULSE_ALLOC_FAILED;
     }
 
-    memset(output_matrix, 0, sizeof(ei::matrix_t));
+    //memset(output_matrix, 0, sizeof(ei::matrix_t));
 
     uint64_t dsp_start_us = ei_read_timer_us();
     uint64_t timing_dsp_us = 0;
@@ -722,11 +722,17 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
             }
         }
 
+        //handle->state.reset();
+        ei_impulse_result_t result = {0};
+
+        //run_inference(handle, features, &result, debug);
+
          // copy the output
         for (size_t m_ix = 0; m_ix < impulse->dsp_blocks[0].n_output_features; m_ix++) {
-            output_matrix->buffer[m_ix] = features[0].matrix->buffer[m_ix]
+            output_matrix->buffer[m_ix] = features[0].matrix->buffer[m_ix];
         }
 
+        delete[] matrix_ptrs;
     }else{
         ei_printf("WARNING classifier not continuous");
     }
