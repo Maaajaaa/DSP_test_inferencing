@@ -58,6 +58,8 @@ static signed short *sampleBuffer;
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 
+ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
+
 /**
  * @brief      Arduino setup function
  */
@@ -103,7 +105,7 @@ void loop()
     //EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
 
     //Serial.println(ei_default_impulse.impulse->dsp_blocks[0].n_output_features);
-    ei::matrix_t outputMatrix(1,650);
+    
     if (!outputMatrix.buffer) {
         ei_printf("allocation of output matrix failed\n");
     }
@@ -139,8 +141,10 @@ void loop()
           bMax = outputMatrix.buffer[i];
         }
       }
-      Serial.print(outputMatrix.buffer[i]);
-      Serial.print(" ");
+      if(i<20){
+        Serial.print(outputMatrix.buffer[i]);
+        Serial.print(" ");
+      }
     }
     Serial.print("\n");
 

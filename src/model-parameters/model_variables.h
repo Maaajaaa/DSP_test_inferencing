@@ -59,7 +59,7 @@ const size_t ei_dsp_blocks_size = 1;
 ei_model_dsp_t ei_dsp_blocks[ei_dsp_blocks_size] = {
     { // DSP block 4
         4,
-        650, // output size
+        325, // output size
         &extract_mfcc_features, // DSP function pointer
         (void*)&ei_dsp_config_4, // pointer to config struct
         ei_dsp_config_4_axes, // array of offsets into the input stream, one for each axis
@@ -127,7 +127,7 @@ const ei_impulse_t impulse_409114_0 = {
     .project_name = "DSP_test",
     .deploy_version = 1,
 
-    .nn_input_frame_size = 650,
+    .nn_input_frame_size = 325,
     .raw_sample_count = 533, //about 30fps
     .raw_samples_per_frame = 1,
     .dsp_input_frame_size = 533 * 1, //about 30fps
@@ -150,7 +150,7 @@ const ei_impulse_t impulse_409114_0 = {
 
     .sensor = EI_CLASSIFIER_SENSOR_MICROPHONE,
     .fusion_string = "audio",
-    .slice_size = (16000/4),
+    .slice_size = (533/4),
     .slices_per_model_window = 4,
 
     .has_anomaly = EI_ANOMALY_TYPE_UNKNOWN,
