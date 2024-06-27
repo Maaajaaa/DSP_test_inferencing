@@ -673,41 +673,32 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
 
         uint32_t block_num = impulse->dsp_blocks_size + impulse->learning_blocks_size;
 
-        // smart pointer to features array
-        std::unique_ptr<ei_feature_t[]> features_ptr(new ei_feature_t[block_num]);
-        ei_feature_t* features = features_ptr.get();
-        memset(features, 0, sizeof(ei_feature_t) * block_num);
-
         // have it outside of the loop to avoid going out of scope
         std::unique_ptr<ei::matrix_t> *matrix_ptrs = new std::unique_ptr<ei::matrix_t>[block_num];
 
         out_features_index = 0;
-        // iterate over every dsp block and run normalization
-        for (size_t ix = 0; ix < impulse->dsp_blocks_size; ix++) {
-            ei_model_dsp_t block = impulse->dsp_blocks[ix];
-            matrix_ptrs[ix] = std::unique_ptr<ei::matrix_t>(new ei::matrix_t(1, block.n_output_features));
-            features[ix].matrix = matrix_ptrs[ix].get();
-            features[ix].blockId = block.blockId;
+        // iterate over our one dsp block
+        ei_model_dsp_t block = impulse->dsp_blocks[0];
+        matrix_ptrs[0] = std::unique_ptr<ei::matrix_t>(new ei::matrix_t(1, block.n_output_features));
 
-            /* Create a copy of the matrix for normalization */
-            for (size_t m_ix = 0; m_ix < block.n_output_features; m_ix++) {
-                features[ix].matrix->buffer[m_ix] = static_features_matrix.buffer[out_features_index + m_ix];
-            }
-
-            if (block.extract_fn == extract_mfcc_features) {
-                //this is what's running
-                calc_cepstral_mean_and_var_normalization_mfcc(features[ix].matrix, block.config);
-            }
-            else if (block.extract_fn == extract_spectrogram_features) {
-                calc_cepstral_mean_and_var_normalization_spectrogram(features[ix].matrix, block.config);
-            }
-            else if (block.extract_fn == extract_mfe_features) {
-                calc_cepstral_mean_and_var_normalization_mfe(features[ix].matrix, block.config);
-            }else{
-                ei_printf("ERROR invalid block.extract_fn");
-            }
-            out_features_index += block.n_output_features;
+        /* copy the data over into our output matrix */
+        for (size_t m_ix = 0; m_ix < block.n_output_features; m_ix++) {
+            output_matrix->buffer[m_ix] = static_features_matrix.buffer[out_features_index + m_ix];
         }
+
+        if (block.extract_fn == extract_mfcc_features) {
+            //this is what's running
+            calc_cepstral_mean_and_var_normalization_mfcc(output_matrix, block.config);
+        }
+        else if (block.extract_fn == extract_spectrogram_features) {
+            calc_cepstral_mean_and_var_normalization_spectrogram(output_matrix, block.config);
+        }
+        else if (block.extract_fn == extract_mfe_features) {
+            calc_cepstral_mean_and_var_normalization_mfe(output_matrix, block.config);
+        }else{
+            ei_printf("ERROR invalid block.extract_fn");
+        }
+        out_features_index += block.n_output_features;
 
         timing_dsp_us += ei_read_timer_us() - dsp_start_us;
         int timing_dsp = (int)(timing_dsp_us / 1000);
@@ -715,22 +706,15 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
 
         ei_printf("\r\nFeatures (%d ms.): ", timing_dsp);
         if(debug){
-            ei_printf("number of filtered features: %i rows: %i", features[0].matrix->cols,  features[0].matrix->rows);
-            for (size_t ix = 0; ix < features[0].matrix->cols; ix++) {
-                ei_printf_float( features[0].matrix->buffer[ix]);
+            ei_printf("number of filtered features: %i rows: %i", output_matrix->cols,  output_matrix->rows);
+            for (size_t ix = 0; ix < output_matrix->cols; ix++) {
+                ei_printf_float( output_matrix->buffer[ix]);
                 ei_printf(" ");
             }
         }
 
         //handle->state.reset();
         ei_impulse_result_t result = {0};
-
-        //run_inference(handle, features, &result, debug);
-
-         // copy the output
-        for (size_t m_ix = 0; m_ix < impulse->dsp_blocks[0].n_output_features; m_ix++) {
-            output_matrix->buffer[m_ix] = features[0].matrix->buffer[m_ix];
-        }
 
         delete[] matrix_ptrs;
     }else{
