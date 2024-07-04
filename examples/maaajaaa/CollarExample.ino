@@ -60,30 +60,48 @@ static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 
 ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
 
+
+
+/* NEOPIXEL STUFF -----------------------------------------------------------------*/
+#include <Adafruit_NeoPixel.h>
+
+#define NUMPIXELS 10 // limited because the neopixel writing is rather slow, needs to be threaded
+#define PIN        9 // for some reason the pin mapping does not exaxtly match that printed 
+Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_RGBW + NEO_KHZ800);
+
+
 /**
  * @brief      Arduino setup function
  */
 void setup()
 {
-    // put your setup code here, to run once:
-    Serial.begin(115200);
-    // comment out the below line to cancel the wait for USB connection (needed for native USB)
-    while (!Serial);
-    Serial.println("Edge Impulse Inferencing Demo");
+  //initialize and test neoPixel
 
-    // summary of inferencing settings (from model_metadata.h)
-    ei_printf("Inferencing settings:\n");
-    ei_printf("\tInterval: %.2f ms.\n", (float)EI_CLASSIFIER_INTERVAL_MS);
-    ei_printf("\tFrame size: %d\n", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
-    ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
-    ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) /
-                                            sizeof(ei_classifier_inferencing_categories[0]));
+  pixels.begin();
+  pixels.setBrightness(40);
+  pixels.setPixelColor(1, 255, 255, 255);
+  pixels.show();
 
-    run_classifier_init();
-    if (microphone_inference_start(EI_CLASSIFIER_SLICE_SIZE) == false) {
-        ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-        return;
-    }
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  // comment out the below line to cancel the wait for USB connection (needed for native USB)
+  while (!Serial);
+  Serial.println("Edge Impulse Inferencing Demo");
+
+  // summary of inferencing settings (from model_metadata.h)
+  ei_printf("Inferencing settings:\n");
+  ei_printf("\tInterval: %.2f ms.\n", (float)EI_CLASSIFIER_INTERVAL_MS);
+  ei_printf("\tFrame size: %d\n", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
+  ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
+  ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) /
+                                          sizeof(ei_classifier_inferencing_categories[0]));
+  ei_printf("\tNumber of NN_Input: %d\n", EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
+
+  run_classifier_init();
+  if (microphone_inference_start(EI_CLASSIFIER_SLICE_SIZE) == false) {
+      ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+      return;
+  }
 }
 
 /**
@@ -126,25 +144,26 @@ void loop()
     
     Serial.print("output: ");
     for(int i = 0; i < outputMatrix.cols; i++){
-
-      //find maxima of the thrids of the spectrum
-      if(i<firstThird){
-        if(outputMatrix.buffer[i] > rMax){
-          rMax = outputMatrix.buffer[i];
+      if(outputMatrix.buffer[i] <= 1.0){
+        //find maxima of the thrids of the spectrum
+        if(i<firstThird){
+          if(outputMatrix.buffer[i] > rMax){
+            rMax = outputMatrix.buffer[i];
+          }
+        }else if(i<secondThird){
+          if(outputMatrix.buffer[i] > gMax){
+            gMax = outputMatrix.buffer[i];
+          }
+        }else{
+          if(outputMatrix.buffer[i] > bMax){
+            bMax = outputMatrix.buffer[i];
+          }
         }
-      }else if(i<secondThird){
-        if(outputMatrix.buffer[i] > gMax){
-          gMax = outputMatrix.buffer[i];
+        if(i<20){
+          Serial.print(outputMatrix.buffer[i]);
+          Serial.print(" ");
         }
-      }else{
-        if(outputMatrix.buffer[i] > bMax){
-          bMax = outputMatrix.buffer[i];
-        }
-      }
-      if(i<20){
-        Serial.print(outputMatrix.buffer[i]);
-        Serial.print(" ");
-      }
+      }     
     }
     Serial.print("\n");
 
@@ -159,7 +178,21 @@ void loop()
     Serial.print(gNew);
     Serial.print(" ");
     Serial.println(bNew);
+
+    Serial.print("max rgb: ");
+    Serial.print(rMax);
+    Serial.print(" ");
+    Serial.print(gMax);
+    Serial.print(" ");
+    Serial.println(bMax);
     
+    //cascading
+    for(int i=NUMPIXELS; i>1; i--){
+      pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+    }
+    //set the new first pixel
+    pixels.setPixelColor(0,rNew, gNew, bNew);
+    pixels.show();   // Send the updated pixel colors to the hardware.
 }
 
 /**
