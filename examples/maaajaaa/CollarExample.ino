@@ -58,6 +58,15 @@ static signed short *sampleBuffer;
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 
+//size needed for the mfcc buffer, seems to report just 1xnum filters
+matrix_size_t mfe_buffer_size = speechpy::feature::calculate_mfe_buffer_size(
+                EI_CLASSIFIER_SLICE_SIZE,
+                EI_CLASSIFIER_FREQUENCY,
+                ei_dsp_config_4.frame_length,
+                ei_dsp_config_4.frame_stride,
+                ei_dsp_config_4.num_filters,
+                ei_dsp_config_4.implementation_version);
+
 ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
 
 
@@ -69,6 +78,11 @@ ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
 #define PIN        9 // for some reason the pin mapping does not exaxtly match that printed 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_RGBW + NEO_KHZ800);
 
+/* GRAPH PLOTTING (no Arduino IDE and cutecom support, only puttY confimred so far)--------------------------------------*/
+bool printGraph = false;
+int nonPrintCycles = 0;
+int printEvery = 30;
+int graphMaxLength = 100.0;
 
 /**
  * @brief      Arduino setup function
@@ -96,12 +110,16 @@ void setup()
   ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) /
                                           sizeof(ei_classifier_inferencing_categories[0]));
   ei_printf("\tNumber of NN_Input: %d\n", EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
+  ei_printf("\tIdeal output size: %dx%d\n", mfe_buffer_size.cols, mfe_buffer_size.rows);
 
   run_classifier_init();
   if (microphone_inference_start(EI_CLASSIFIER_SLICE_SIZE) == false) {
       ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
       return;
   }
+
+
+
 }
 
 /**
@@ -138,54 +156,85 @@ void loop()
     double gMax = 0.0;
     double bMax = 0.0;
 
+    //relevant buffer area where the mfcc output is stored
+    int relevantBuferCols = mfe_buffer_size.cols;
+
     int firstThird, secondThird;
-    firstThird = outputMatrix.cols /3;
+    firstThird =  relevantBuferCols/3;
     secondThird = firstThird*2;
+
     
-    Serial.print("output: ");
-    for(int i = 0; i < outputMatrix.cols; i++){
-      if(outputMatrix.buffer[i] <= 1.0){
-        //find maxima of the thrids of the spectrum
-        if(i<firstThird){
-          if(outputMatrix.buffer[i] > rMax){
-            rMax = outputMatrix.buffer[i];
-          }
-        }else if(i<secondThird){
-          if(outputMatrix.buffer[i] > gMax){
-            gMax = outputMatrix.buffer[i];
-          }
-        }else{
-          if(outputMatrix.buffer[i] > bMax){
-            bMax = outputMatrix.buffer[i];
-          }
-        }
-        if(i<20){
-          Serial.print(outputMatrix.buffer[i]);
-          Serial.print(" ");
-        }
-      }     
+    //print graph, can't be viewed in arduino viewer, but putty or cutecom do support the clear screen command
+    //stackoverflow.com/a/15559322
+    if(printGraph  && nonPrintCycles >= printEvery){
+      Serial.write(27); //ESC
+      Serial.print("[2J"); //clear screen
+      Serial.write(27); //ESC
+      Serial.print("[H"); //cursor to home
     }
-    Serial.print("\n");
+    if(!printGraph){
+      Serial.print("output: ");
+    }
+    for(int i = 0; i < relevantBuferCols; i++){
+      //find maxima of the thrids of the spectrum
+      if(i<firstThird){
+        if(outputMatrix.buffer[i] > rMax){
+          rMax = outputMatrix.buffer[i];
+        }
+      }else if(i<secondThird){
+        if(outputMatrix.buffer[i] > gMax){
+          gMax = outputMatrix.buffer[i];
+        }
+      }else{
+        if(outputMatrix.buffer[i] > bMax){
+          bMax = outputMatrix.buffer[i];
+        }
+      }
+
+      if(!printGraph && i<20){
+        Serial.print(outputMatrix.buffer[i]);
+        Serial.print(" ");
+      } 
+
+      //print graph bar
+      if(printGraph && nonPrintCycles >= printEvery){
+        for(int j = 0; j<round(graphMaxLength * outputMatrix.buffer[i]); j++){
+          Serial.print("▮");
+        }
+        Serial.println();
+      }
+    }
+    if(!printGraph)
+      Serial.print("\n");
+
+    if(printGraph && nonPrintCycles >= printEvery){
+        nonPrintCycles = 0;
+    }else{
+      nonPrintCycles++;
+    }
 
     //calculate new 8-bit rbg values, assuming mfcc output is normed to 0..1
     int rNew = rMax*255;
     int gNew = gMax*255;
     int bNew = bMax*255;
 
-    Serial.print("new rgb: ");
-    Serial.print(rNew);
-    Serial.print(" ");
-    Serial.print(gNew);
-    Serial.print(" ");
-    Serial.println(bNew);
+    if(!printGraph){
 
-    Serial.print("max rgb: ");
-    Serial.print(rMax);
-    Serial.print(" ");
-    Serial.print(gMax);
-    Serial.print(" ");
-    Serial.println(bMax);
-    
+      Serial.print("new rgb: ");
+      Serial.print(rNew);
+      Serial.print(" ");
+      Serial.print(gNew);
+      Serial.print(" ");
+      Serial.println(bNew);
+
+      Serial.print("max rgb: ");
+      Serial.print(rMax);
+      Serial.print(" ");
+      Serial.print(gMax);
+      Serial.print(" ");
+      Serial.println(bMax);
+      
+    }
     //cascading
     for(int i=NUMPIXELS; i>1; i--){
       pixels.setPixelColor(i,pixels.getPixelColor(i-1));

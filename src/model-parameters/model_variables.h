@@ -47,10 +47,10 @@ ei_dsp_config_mfcc_t ei_dsp_config_4 = {
     0.02f, // float frame_length
     0.02f, // float frame_stride
     32, // int num_filters
-    256, // int fft_length
+    256, // int fft_length //touching this causes ERR: MFCC failed (-1016)
     101, // int win_size
-    0, // int low_frequency
-    0, // int high_frequency
+    0, // int low_frequency; defaults to 300
+    0, // int high_frequency; defaults to sampling frequency/2
     0.98f, // float pre_cof
     1 // int pre_shift
 };
