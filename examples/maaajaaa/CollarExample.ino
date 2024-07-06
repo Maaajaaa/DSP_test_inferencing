@@ -84,6 +84,9 @@ int nonPrintCycles = 0;
 int printEvery = 30;
 int graphMaxLength = 100.0;
 
+bool showSingleCeptrum = false;
+int ceptrumToShow = 0;
+
 /**
  * @brief      Arduino setup function
  */
@@ -94,6 +97,14 @@ void setup()
   pixels.begin();
   pixels.setBrightness(40);
   pixels.setPixelColor(1, 255, 255, 255);
+  for(int j=0; j<NUMPIXELS; j++){
+    for(int i=NUMPIXELS; i>0; i--){
+      pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+    }
+    pixels.show();
+    delay(200);
+  }
+
   pixels.show();
 
   // put your setup code here, to run once:
@@ -152,16 +163,19 @@ void loop()
         return;
     }*/
 
-    double rMax = 0.0;
-    double gMax = 0.0;
-    double bMax = 0.0;
+    double rMax = -100.0;
+    int rMaxIndex = -1;
+    double gMax = -100.0;
+    int gMaxIndex = -1;
+    double bMax = -100.0;
+    int bMaxIndex = -1;
 
     //relevant buffer area where the mfcc output is stored
     int relevantBuferCols = mfe_buffer_size.cols;
 
     int firstThird, secondThird;
-    firstThird =  relevantBuferCols/3;
-    secondThird = firstThird*2;
+    firstThird =  3;
+    secondThird = 5;
 
     
     //print graph, can't be viewed in arduino viewer, but putty or cutecom do support the clear screen command
@@ -180,14 +194,17 @@ void loop()
       if(i<firstThird){
         if(outputMatrix.buffer[i] > rMax){
           rMax = outputMatrix.buffer[i];
+          rMaxIndex = i;
         }
       }else if(i<secondThird){
         if(outputMatrix.buffer[i] > gMax){
           gMax = outputMatrix.buffer[i];
+          gMaxIndex = i;
         }
       }else{
         if(outputMatrix.buffer[i] > bMax){
           bMax = outputMatrix.buffer[i];
+          bMaxIndex = i;
         }
       }
 
@@ -203,6 +220,16 @@ void loop()
         }
         Serial.println();
       }
+      if(i==ceptrumToShow && showSingleCeptrum){
+        for(int j = 0; j<NUMPIXELS; j++){  
+          if(j<= round(NUMPIXELS * outputMatrix.buffer[i])){
+            pixels.setPixelColor(j,255, 0, 0);
+          }else{
+            pixels.setPixelColor(j,0, 0, 0);
+          }
+        }
+      }
+
     }
     if(!printGraph)
       Serial.print("\n");
@@ -214,9 +241,9 @@ void loop()
     }
 
     //calculate new 8-bit rbg values, assuming mfcc output is normed to 0..1
-    int rNew = rMax*255;
-    int gNew = gMax*255;
-    int bNew = bMax*255;
+    int rNew = (rMax+4)*5;
+    int gNew = (gMax+4)*5;
+    int bNew = (bMax+4)*5;
 
     if(!printGraph){
 
@@ -233,14 +260,26 @@ void loop()
       Serial.print(gMax);
       Serial.print(" ");
       Serial.println(bMax);
+
+      Serial.print("max rgb index: ");
+      Serial.print(rMaxIndex);
+      Serial.print(" ");
+      Serial.print(gMaxIndex);
+      Serial.print(" ");
+      Serial.println(bMaxIndex);
+      
       
     }
     //cascading
-    for(int i=NUMPIXELS; i>1; i--){
-      pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+    if(!showSingleCeptrum){
+      for(int i=NUMPIXELS; i>0; i--){
+        pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+      }
     }
     //set the new first pixel
-    pixels.setPixelColor(0,rNew, gNew, bNew);
+    if(!showSingleCeptrum){
+      pixels.setPixelColor(0,rNew, gNew, bNew);
+    }
     pixels.show();   // Send the updated pixel colors to the hardware.
 }
 
