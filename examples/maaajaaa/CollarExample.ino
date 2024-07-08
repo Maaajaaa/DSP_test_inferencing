@@ -95,7 +95,7 @@ void setup()
   //initialize and test neoPixel
 
   pixels.begin();
-  pixels.setBrightness(40);
+  pixels.setBrightness(255);
   pixels.setPixelColor(1, 255, 255, 255);
   for(int j=0; j<NUMPIXELS; j++){
     for(int i=NUMPIXELS; i>0; i--){
