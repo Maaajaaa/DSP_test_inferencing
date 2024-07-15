@@ -74,7 +74,8 @@ ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
 /* NEOPIXEL STUFF -----------------------------------------------------------------*/
 #include <Adafruit_NeoPixel.h>
 
-#define NUMPIXELS 10 // limited because the neopixel writing is rather slow, needs to be threaded
+#define NUMPIXELS 41 // limited because the neopixel writing is rather slow, needs to be threaded
+//needs to be divisable by 2 with remainder 1
 #define PIN        9 // for some reason the pin mapping does not exaxtly match that printed 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_RGBW + NEO_KHZ800);
 
@@ -84,16 +85,38 @@ int nonPrintCycles = 0;
 int printEvery = 30;
 int graphMaxLength = 100.0;
 
-bool showSingleCeptrum = false;
+#define LINE_CASCADING 2
+#define SYMMETRIC_CASCADING 3
+#define SINGLE_CEPTRUM 1
 int ceptrumToShow = 0;
+
+
+int outputMode = SYMMETRIC_CASCADING;
 
 /**
  * @brief      Arduino setup function
  */
 void setup()
 {
+
+    // put your setup code here, to run once:
+  Serial.begin(115200);
   //initialize and test neoPixel
 
+  if(NUMPIXELS % 2 != 1 && outputMode == SYMMETRIC_CASCADING){
+    //turn strip red
+    for(int i=NUMPIXELS; i>0; i--){
+      pixels.setPixelColor(i,255,0,0);
+    }
+    pixels.show();
+    //wait for serial
+    while (!Serial);
+    //do not run the rest of the code
+    while(1){
+      Serial.println("ERROR: NUMPIXELS must be an ueneven number");
+      delay(2000);
+    }
+  }
   pixels.begin();
   pixels.setBrightness(255);
   pixels.setPixelColor(1, 255, 255, 255);
@@ -102,15 +125,14 @@ void setup()
       pixels.setPixelColor(i,pixels.getPixelColor(i-1));
     }
     pixels.show();
-    delay(200);
+    delay(50);
   }
+
+  
 
   pixels.show();
 
-  // put your setup code here, to run once:
-  Serial.begin(115200);
-  // comment out the below line to cancel the wait for USB connection (needed for native USB)
-  while (!Serial);
+  
   Serial.println("Edge Impulse Inferencing Demo");
 
   // summary of inferencing settings (from model_metadata.h)
@@ -220,7 +242,7 @@ void loop()
         }
         Serial.println();
       }
-      if(i==ceptrumToShow && showSingleCeptrum){
+      if(i==ceptrumToShow && outputMode == SINGLE_CEPTRUM ){
         for(int j = 0; j<NUMPIXELS; j++){  
           if(j<= round(NUMPIXELS * outputMatrix.buffer[i])){
             pixels.setPixelColor(j,255, 0, 0);
@@ -280,15 +302,31 @@ void loop()
       
       
     }
-    //cascading
-    if(!showSingleCeptrum){
-      for(int i=NUMPIXELS; i>0; i--){
-        pixels.setPixelColor(i,pixels.getPixelColor(i-1));
-      }
-    }
-    //set the new first pixel
-    if(!showSingleCeptrum){
-      pixels.setPixelColor(0,rNew, gNew, bNew);
+    switch(outputMode){
+      case LINE_CASCADING:
+        //cascade
+        for(int i=NUMPIXELS; i>0; i--){
+          pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+        }
+        //set 0th pixel
+        pixels.setPixelColor(0,rNew, gNew, bNew);
+      break;
+
+      case SYMMETRIC_CASCADING:
+
+        int centerPixel = NUMPIXELS/2+1;
+        //cneter to left cascading
+        for(int i=NUMPIXELS; i>centerPixel; i--){
+          pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+        }
+        //center to right cascading
+        for(int i=0; i<centerPixel; i++){
+          pixels.setPixelColor(i,pixels.getPixelColor(i+1));
+        }
+        //set center pixel
+        pixels.setPixelColor(centerPixel,rNew, gNew, bNew);
+      break;
+
     }
     pixels.show();   // Send the updated pixel colors to the hardware.
 }
