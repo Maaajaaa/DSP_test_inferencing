@@ -275,17 +275,17 @@ void loop()
     }
 
     //calculate new 8-bit rbg values, assuming mfcc output is normed to 0..1
-    int rNew = rMax*2; //pow(rMax+4,2)*0.4;
-    int gNew = gMax*2;//pow(gMax+4,2)*0.4;
-    int bNew = bMax*2;//pow(bMax+4,2)*0.4;
+    int rNew = pow(rMax,2)*0.6;
+    int gNew = pow(gMax,2)*0.6;
+    int bNew = pow(bMax,2)*0.6;
 
-    if(rMax < 0){
+    if(rMax < 0.4){
       rNew = 0;
     }
-    if(gMax < 0){
+    if(gMax < 0.5){
       gNew = 0;
     }
-    if(bMax < 0){
+    if(bMax < 0.3){
       bNew = 0;
     }
 
