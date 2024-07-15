@@ -15,7 +15,7 @@
  */
 
 // If your target is limited in memory remove this macro to save 10K RAM
-#define EIDSP_QUANTIZE_FILTERBANK   0
+#define EIDSP_QUANTIZE_FILTERBANK 0
 
 /**
  * Define the number of slices per model window. E.g. a model window of 1000 ms
@@ -45,38 +45,38 @@
 
 /** Audio buffers, pointers and selectors */
 typedef struct {
-    signed short *buffers[2];
-    unsigned char buf_select;
-    unsigned char buf_ready;
-    unsigned int buf_count;
-    unsigned int n_samples;
+  signed short *buffers[2];
+  unsigned char buf_select;
+  unsigned char buf_ready;
+  unsigned int buf_count;
+  unsigned int n_samples;
 } inference_t;
 
 static inference_t inference;
 static bool record_ready = false;
 static signed short *sampleBuffer;
-static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
+static bool debug_nn = false;  // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 
 //size needed for the mfcc buffer, seems to report just 1xnum filters
 matrix_size_t mfe_buffer_size = speechpy::feature::calculate_mfe_buffer_size(
-                EI_CLASSIFIER_SLICE_SIZE,
-                EI_CLASSIFIER_FREQUENCY,
-                ei_dsp_config_4.frame_length,
-                ei_dsp_config_4.frame_stride,
-                ei_dsp_config_4.num_filters,
-                ei_dsp_config_4.implementation_version);
+  EI_CLASSIFIER_SLICE_SIZE,
+  EI_CLASSIFIER_FREQUENCY,
+  ei_dsp_config_4.frame_length,
+  ei_dsp_config_4.frame_stride,
+  ei_dsp_config_4.num_filters,
+  ei_dsp_config_4.implementation_version);
 
-ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
+ei::matrix_t outputMatrix(1, EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
 
 
 
 /* NEOPIXEL STUFF -----------------------------------------------------------------*/
 #include <Adafruit_NeoPixel.h>
 
-#define NUMPIXELS 41 // limited because the neopixel writing is rather slow, needs to be threaded
+#define NUMPIXELS 41  // limited because the neopixel writing is rather slow, needs to be threaded
 //needs to be divisable by 2 with remainder 1
-#define PIN        9 // for some reason the pin mapping does not exaxtly match that printed 
+#define PIN 9  // for some reason the pin mapping does not exaxtly match that printed
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_RGBW + NEO_KHZ800);
 
 
@@ -93,7 +93,7 @@ int ceptrumToShow = 0;
 
 int outputMode = SYMMETRIC_CASCADING;
 
-struct RGBColour{
+struct RGBColour {
   uint8_t r;
   uint8_t g;
   uint8_t b;
@@ -107,31 +107,30 @@ float alphaLowPass = 0.6;
 
 #define SIGMA_FINAL_GAUSSIAN 0.2
 
+static bool debug_arduino_filtering = false;
 
-
-float kernelCache[2*NUMPIXELS];
-
+float kernelCache[2 * NUMPIXELS];
 
 /**
  * @brief      Arduino setup function
  */
-void setup()
-{
+void setup() {
 
-    // put your setup code here, to run once:
+  // put your setup code here, to run once:
   Serial.begin(115200);
   //initialize and test neoPixel
 
-  if(NUMPIXELS % 2 != 1 && outputMode == SYMMETRIC_CASCADING){
+  if (NUMPIXELS % 2 != 1 && outputMode == SYMMETRIC_CASCADING) {
     //turn strip red
-    for(int i=NUMPIXELS; i>0; i--){
-      pixels.setPixelColor(i,255,0,0);
+    for (int i = NUMPIXELS; i > 0; i--) {
+      pixels.setPixelColor(i, 255, 0, 0);
     }
     pixels.show();
     //wait for serial
-    while (!Serial);
+    while (!Serial)
+      ;
     //do not run the rest of the code
-    while(1){
+    while (1) {
       Serial.println("ERROR: NUMPIXELS must be an ueneven number");
       delay(2000);
     }
@@ -139,9 +138,9 @@ void setup()
   pixels.begin();
   pixels.setBrightness(255);
   pixels.setPixelColor(1, 255, 255, 255);
-  for(int j=0; j<NUMPIXELS; j++){
-    for(int i=NUMPIXELS; i>0; i--){
-      pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+  for (int j = 0; j < NUMPIXELS; j++) {
+    for (int i = NUMPIXELS; i > 0; i--) {
+      pixels.setPixelColor(i, pixels.getPixelColor(i - 1));
     }
     pixels.show();
     delay(50);
@@ -149,7 +148,7 @@ void setup()
 
   //calculate kernelCache
   computeKernelCache(kernelCache, NUMPIXELS, SIGMA_FINAL_GAUSSIAN);
-  
+
   Serial.println("Edge Impulse Inferencing Demo");
 
   // summary of inferencing settings (from model_metadata.h)
@@ -157,47 +156,42 @@ void setup()
   ei_printf("\tInterval: %.2f ms.\n", (float)EI_CLASSIFIER_INTERVAL_MS);
   ei_printf("\tFrame size: %d\n", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
   ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
-  ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) /
-                                          sizeof(ei_classifier_inferencing_categories[0]));
+  ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
   ei_printf("\tNumber of NN_Input: %d\n", EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
   ei_printf("\tIdeal output size: %dx%d\n", mfe_buffer_size.cols, mfe_buffer_size.rows);
 
   run_classifier_init();
   if (microphone_inference_start(EI_CLASSIFIER_SLICE_SIZE) == false) {
-      ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-      return;
+    ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    return;
   }
-
-
-
 }
 
 /**
  * @brief      Arduino main function. Runs the inferencing loop.
  */
-void loop()
-{
-    bool m = microphone_inference_record();
-    if (!m) {
-        ei_printf("ERR: Failed to record audio...\n");
-        return;
-    }
+void loop() {
+  bool m = microphone_inference_record();
+  if (!m) {
+    ei_printf("ERR: Failed to record audio...\n");
+    return;
+  }
 
-    signal_t signal;
-    signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-    signal.get_data = &microphone_audio_signal_get_data;
-    ei_impulse_result_t result = {0};
+  signal_t signal;
+  signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+  signal.get_data = &microphone_audio_signal_get_data;
+  ei_impulse_result_t result = { 0 };
 
-    //EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+  //EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
 
-    //Serial.println(ei_default_impulse.impulse->dsp_blocks[0].n_output_features);
-    
-    if (!outputMatrix.buffer) {
-        ei_printf("allocation of output matrix failed\n");
-    }
-    run_mfcc_maaajaaa(&signal, &outputMatrix, debug_nn);
+  //Serial.println(ei_default_impulse.impulse->dsp_blocks[0].n_output_features);
 
-    /*if (r != EI_IMPULSE_OK) {
+  if (!outputMatrix.buffer) {
+    ei_printf("allocation of output matrix failed\n");
+  }
+  run_mfcc_maaajaaa(&signal, &outputMatrix, debug_nn);
+
+  /*if (r != EI_IMPULSE_OK) {
         ei_printf("ERR: Failed to run classifier (%d)\n", r);
         return;
     }*/
@@ -267,136 +261,155 @@ void loop()
             pixels.setPixelColor(j,0, 0, 0);
           }
         }
+        gMaxIndex = i;
       }
-
-    }
-    if(!printGraph)
-      Serial.print("\n");
-
-    if(printGraph && nonPrintCycles >= printEvery){
-        nonPrintCycles = 0;
-    }else{
-      nonPrintCycles++;
+    } else {
+      if (outputMatrix.buffer[i] > bMax) {
+        bMax = outputMatrix.buffer[i];
+        bMaxIndex = i;
+      }
     }
 
-    //calculate new 8-bit rbg values, assuming mfcc output is normed to 0..1
-    int rNew = pow(rMax,2)*0.6;
-    int gNew = pow(gMax,2)*0.6;
-    int bNew = pow(bMax,2)*0.6;
-
-    if(rMax < 0.4){
-      rNew = 0;
-    }
-    if(gMax < 0.5){
-      gNew = 0;
-    }
-    if(bMax < 0.3){
-      bNew = 0;
+    if (!printGraph && i < 20) {
+      Serial.print(outputMatrix.buffer[i]);
+      Serial.print(" ");
     }
 
-    if(!printGraph){
-
-      Serial.print("new rgb: ");
-      Serial.print(rNew);
-      Serial.print(" ");
-      Serial.print(gNew);
-      Serial.print(" ");
-      Serial.println(bNew);
-
-      Serial.print("max rgb: ");
-      Serial.print(rMax);
-      Serial.print(" ");
-      Serial.print(gMax);
-      Serial.print(" ");
-      Serial.println(bMax);
-
-      Serial.print("max rgb index: ");
-      Serial.print(rMaxIndex);
-      Serial.print(" ");
-      Serial.print(gMaxIndex);
-      Serial.print(" ");
-      Serial.println(bMaxIndex);
-      
-      
+    //print graph bar
+    if (printGraph && nonPrintCycles >= printEvery) {
+      for (int j = 0; j < round(graphMaxLength * outputMatrix.buffer[i]); j++) {
+        Serial.print("▮");
+      }
+      Serial.println();
     }
-    //make copy of pixel array (needed for filtering only)
-    std::copy(pixelArray, pixelArray+NUMPIXELS, pixelArrayOld);
-    switch(outputMode){
-
-      case LINE_CASCADING:
-        //cascade
-        for(int i=NUMPIXELS; i>0; i--){
-          pixelArray[i] = pixelArray[i-1];
+    if (i == ceptrumToShow && outputMode == SINGLE_CEPTRUM) {
+      for (int j = 0; j < NUMPIXELS; j++) {
+        if (j <= round(NUMPIXELS * outputMatrix.buffer[i])) {
+          pixels.setPixelColor(j, 255, 0, 0);
+        } else {
+          pixels.setPixelColor(j, 0, 0, 0);
         }
-        //set 0th pixel
-        pixelArray[0] = {rNew, gNew, bNew};
+      }
+    }
+  }
+  if (!printGraph)
+    Serial.print("\n");
+
+  if (printGraph && nonPrintCycles >= printEvery) {
+    nonPrintCycles = 0;
+  } else {
+    nonPrintCycles++;
+  }
+
+  //calculate new 8-bit rbg values, assuming mfcc output is normed to 0..1
+  int rNew = pow(rMax, 2) * 0.6;
+  int gNew = pow(gMax, 2) * 0.6;
+  int bNew = pow(bMax, 2) * 0.6;
+
+  if (rMax < 0.4) {
+    rNew = 0;
+  }
+  if (gMax < 0.5) {
+    gNew = 0;
+  }
+  if (bMax < 0.3) {
+    bNew = 0;
+  }
+
+  if (!printGraph && debug_arduino_filtering) {
+
+    Serial.print("new rgb: ");
+    Serial.print(rNew);
+    Serial.print(" ");
+    Serial.print(gNew);
+    Serial.print(" ");
+    Serial.println(bNew);
+
+    Serial.print("max rgb: ");
+    Serial.print(rMax);
+    Serial.print(" ");
+    Serial.print(gMax);
+    Serial.print(" ");
+    Serial.println(bMax);
+
+    Serial.print("max rgb index: ");
+    Serial.print(rMaxIndex);
+    Serial.print(" ");
+    Serial.print(gMaxIndex);
+    Serial.print(" ");
+    Serial.println(bMaxIndex);
+  }
+  //make copy of pixel array (needed for filtering only)
+  std::copy(pixelArray, pixelArray + NUMPIXELS, pixelArrayOld);
+  switch (outputMode) {
+
+    case LINE_CASCADING:
+      //cascade
+      for (int i = NUMPIXELS; i > 0; i--) {
+        pixelArray[i] = pixelArray[i - 1];
+      }
+      //set 0th pixel
+      pixelArray[0] = { rNew, gNew, bNew };
       break;
 
-      case SYMMETRIC_CASCADING:
+    case SYMMETRIC_CASCADING:
 
-        int centerPixel = NUMPIXELS/2+1;
-        //cneter to left cascading
-        for(int i=NUMPIXELS; i>centerPixel; i--){
-          pixelArray[i] = pixelArray[i-1];
-          //pixels.setPixelColor(i,pixels.getPixelColor(i-1));
-        }
-        //center to right cascading
-        for(int i=0; i<centerPixel; i++){
-          pixelArray[i] = pixelArray[i+1];
-          //pixels.setPixelColor(i,pixels.getPixelColor(i+1));
-        }
-        //set center pixel
-        pixelArray[centerPixel] = {rNew, gNew, bNew};
+      int centerPixel = NUMPIXELS / 2 + 1;
+      //center to left cascading
+      for (int i = NUMPIXELS; i > centerPixel; i--) {
+        pixelArray[i] = pixelArray[i - 1];
+      }
+      //center to right cascading
+      for (int i = 0; i < centerPixel; i++) {
+        pixelArray[i] = pixelArray[i + 1];
+      }
+      //set center pixel
+      pixelArray[centerPixel] = { rNew, gNew, bNew };
       break;
+  }
+  //apply filter and apply array to pixels
+  //caching arrays to use 3 separate 1d gaussian blur fliters
+  float reds[NUMPIXELS];
+  float greens[NUMPIXELS];
+  float blues[NUMPIXELS];
+  for (int i = 0; i < NUMPIXELS; i++) {
+    //apply low pass filter
+    RGBColour filteredCol = filterRGBColour(pixelArray[i], pixelArrayOld[i]);
+    reds[i] = filteredCol.r;
+    greens[i] = filteredCol.g;
+    blues[i] = filteredCol.b;
+  }
 
-    }
-    //apply filter and apply array to pixels
-    //caching arrays to use 3 separate 1d gaussian blur fliters
-    float reds[NUMPIXELS];
-    float greens[NUMPIXELS];
-    float blues[NUMPIXELS];
-    for(int i = 0; i<NUMPIXELS; i++){
-      //apply low pass filter
-      RGBColour filteredCol = filterRGBColour(pixelArray[i], pixelArrayOld[i]);
-      reds[i] = filteredCol.r;
-      greens[i] = filteredCol.g;
-      blues[i] = filteredCol.b;
-
-      //pixels.setPixelColor(i,pixelArray[i].r, pixelArray[i].g, pixelArray[i].b);
-      //pixels.setPixelColor(i,filteredCol.r, filteredCol.g, filteredCol.b);
-    }
-
-    for(int i = 0; i<NUMPIXELS; i++){
-      int r = round(makeAndApplyKernelFromKernelCache(kernelCache,NUMPIXELS, i, reds));
-      int g = round(makeAndApplyKernelFromKernelCache(kernelCache,NUMPIXELS, i, greens));
-      int b = round(makeAndApplyKernelFromKernelCache(kernelCache,NUMPIXELS, i, blues));
-      pixels.setPixelColor(i,r,g,b);
-    }
-    pixels.show();   // Send the updated pixel colors to the hardware.
+  for (int i = 0; i < NUMPIXELS; i++) {
+    int r = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, reds));
+    int g = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, greens));
+    int b = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, blues));
+    pixels.setPixelColor(i, r, g, b);
+  }
+  pixels.show();  // Send the updated pixel colors to the hardware.
 }
 
 /**
  * @brief      PDM buffer full callback
  *             Get data and call audio thread callback
  */
-static void pdm_data_ready_inference_callback(void)
-{
-    int bytesAvailable = PDM.available();
+static void pdm_data_ready_inference_callback(void) {
+  int bytesAvailable = PDM.available();
 
-    // read into the sample buffer
-    int bytesRead = PDM.read((char *)&sampleBuffer[0], bytesAvailable);
+  // read into the sample buffer
+  int bytesRead = PDM.read((char *)&sampleBuffer[0], bytesAvailable);
 
-    if (record_ready == true) {
-        for (int i = 0; i<bytesRead>> 1; i++) {
-            inference.buffers[inference.buf_select][inference.buf_count++] = sampleBuffer[i];
+  if (record_ready == true) {
+    for (int i = 0; i < bytesRead >> 1; i++) {
+      inference.buffers[inference.buf_select][inference.buf_count++] = sampleBuffer[i];
 
-            if (inference.buf_count >= inference.n_samples) {
-                inference.buf_select ^= 1;
-                inference.buf_count = 0;
-                inference.buf_ready = 1;
-            }
-        }
+      if (inference.buf_count >= inference.n_samples) {
+        inference.buf_select ^= 1;
+        inference.buf_count = 0;
+        inference.buf_ready = 1;
+      }
     }
+  }
 }
 
 /**
@@ -406,52 +419,51 @@ static void pdm_data_ready_inference_callback(void)
  *
  * @return     { description_of_the_return_value }
  */
-static bool microphone_inference_start(uint32_t n_samples)
-{
-    inference.buffers[0] = (signed short *)malloc(n_samples * sizeof(signed short));
+static bool microphone_inference_start(uint32_t n_samples) {
+  inference.buffers[0] = (signed short *)malloc(n_samples * sizeof(signed short));
 
-    if (inference.buffers[0] == NULL) {
-        return false;
-    }
+  if (inference.buffers[0] == NULL) {
+    return false;
+  }
 
-    inference.buffers[1] = (signed short *)malloc(n_samples * sizeof(signed short));
+  inference.buffers[1] = (signed short *)malloc(n_samples * sizeof(signed short));
 
-    if (inference.buffers[1] == NULL) {
-        free(inference.buffers[0]);
-        return false;
-    }
+  if (inference.buffers[1] == NULL) {
+    free(inference.buffers[0]);
+    return false;
+  }
 
-    sampleBuffer = (signed short *)malloc((n_samples >> 1) * sizeof(signed short));
+  sampleBuffer = (signed short *)malloc((n_samples >> 1) * sizeof(signed short));
 
-    if (sampleBuffer == NULL) {
-        free(inference.buffers[0]);
-        free(inference.buffers[1]);
-        return false;
-    }
+  if (sampleBuffer == NULL) {
+    free(inference.buffers[0]);
+    free(inference.buffers[1]);
+    return false;
+  }
 
-    inference.buf_select = 0;
-    inference.buf_count = 0;
-    inference.n_samples = n_samples;
-    inference.buf_ready = 0;
+  inference.buf_select = 0;
+  inference.buf_count = 0;
+  inference.n_samples = n_samples;
+  inference.buf_ready = 0;
 
-    // configure the data receive callback
-    PDM.onReceive(&pdm_data_ready_inference_callback);
+  // configure the data receive callback
+  PDM.onReceive(&pdm_data_ready_inference_callback);
 
-    PDM.setBufferSize((n_samples >> 1) * sizeof(int16_t));
+  PDM.setBufferSize((n_samples >> 1) * sizeof(int16_t));
 
-    // initialize PDM with:
-    // - one channel (mono mode)
-    // - a 16 kHz sample rate
-    if (!PDM.begin(1, EI_CLASSIFIER_FREQUENCY)) {
-        ei_printf("Failed to start PDM!");
-    }
+  // initialize PDM with:
+  // - one channel (mono mode)
+  // - a 16 kHz sample rate
+  if (!PDM.begin(1, EI_CLASSIFIER_FREQUENCY)) {
+    ei_printf("Failed to start PDM!");
+  }
 
-    // set the gain, defaults to 20
-    PDM.setGain(127);
+  // set the gain, defaults to 20
+  PDM.setGain(127);
 
-    record_ready = true;
+  record_ready = true;
 
-    return true;
+  return true;
 }
 
 /**
@@ -459,59 +471,56 @@ static bool microphone_inference_start(uint32_t n_samples)
  *
  * @return     True when finished
  */
-static bool microphone_inference_record(void)
-{
-    bool ret = true;
+static bool microphone_inference_record(void) {
+  bool ret = true;
 
-    if (inference.buf_ready == 1) {
-        ei_printf(
-            "Error sample buffer overrun. Decrease the number of slices per model window "
-            "(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)\n");
-        ret = false;
-    }
+  if (inference.buf_ready == 1) {
+    ei_printf(
+      "Error sample buffer overrun. Decrease the number of slices per model window "
+      "(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)\n");
+    ret = false;
+  }
 
-    while (inference.buf_ready == 0) {
-        delay(1);
-    }
+  while (inference.buf_ready == 0) {
+    delay(1);
+  }
 
-    inference.buf_ready = 0;
+  inference.buf_ready = 0;
 
-    return ret;
+  return ret;
 }
 
 /**
  * Get raw audio signal data
  */
-static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
-{
-    numpy::int16_to_float(&inference.buffers[inference.buf_select ^ 1][offset], out_ptr, length);
+static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+  numpy::int16_to_float(&inference.buffers[inference.buf_select ^ 1][offset], out_ptr, length);
 
-    return 0;
+  return 0;
 }
 
 /**
  * @brief      Stop PDM and release buffers
  */
-static void microphone_inference_end(void)
-{
-    PDM.end();
-    free(inference.buffers[0]);
-    free(inference.buffers[1]);
-    free(sampleBuffer);
+static void microphone_inference_end(void) {
+  PDM.end();
+  free(inference.buffers[0]);
+  free(inference.buffers[1]);
+  free(sampleBuffer);
 }
 
 //Tf is the filter time constant
 //Ts ist the sampling time
-float lowPassFilter(float alpha, float y, float y_prev){
+float lowPassFilter(float alpha, float y, float y_prev) {
   //based on simple FOC equation https://docs.simplefoc.com/low_pass_filter
-  // calculate the filtering 
+  // calculate the filtering
   //float alpha = Tf/(Tf + Ts);
-  return alpha*y_prev + (1.0f - alpha) * y;
+  return alpha * y_prev + (1.0f - alpha) * y;
 }
 
 
 
-RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast){
+RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast) {
   RGBColour rgbColour;
   rgbColour.r = lowPassFilter(alphaLowPass, rgbColourCurrent.r, rgbColourLast.r);
   rgbColour.g = lowPassFilter(alphaLowPass, rgbColourCurrent.g, rgbColourLast.g);
@@ -521,50 +530,72 @@ RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast){
 
 //Gaussian Blut 1D, based on https://github.com/Maaajaaa/Gaussian_filter_1D/ which is forked off of https://github.com/lchop/Gaussian_filter_1D_cpp
 
-void computeKernelCache(float *kernelCache, int n_points, float sigma)
-{
-    //Compute the kernel for the given x point
-    //calculate sigma² once to speed up calculation
-    float twoSigmaSquared = (2*pow(sigma,2));
-    for (int i =0; i<n_points*2;i++)
-    {
-        //Compute gaussian kernel
-        //kernel cache at 0 is -1*n_points
-        kernelCache[i] = exp(-(pow(-1*n_points + i,2) / twoSigmaSquared));
-    }
-    return;
+/**
+ * @brief      Compute Kernel cache, this is used to later create kernels without needing to run the expensive exp and pow functions repeatedly
+ *
+ * @param[in]  n_points  The length of the future input array
+ * @param[in]  sigma Sigma, standard deviation, paramter of gaussian distribution
+ *
+ * @return     { description_of_the_return_value }
+ */
+void computeKernelCache(float *kernelCache, int n_points, float sigma) {
+  //Compute the kernel for the given x point
+  //calculate sigma² once to speed up calculation
+  float twoSigmaSquared = (2 * pow(sigma, 2));
+  for (int i = 0; i < n_points * 2; i++) {
+    //Compute gaussian kernel
+    //kernel cache at 0 is -1*n_points
+    kernelCache[i] = exp(-(pow(-1 * n_points + i, 2) / twoSigmaSquared));
+  }
+  return;
 }
 
-float makeAndApplyKernelFromKernelCache(float kernelCache[], int n_points, int x_position, float y_values[])
-{
-    //make array for the actual kernel for the given x point
-    float kernel[n_points] = {};
-    float sum_kernel = 0;
-    for (int i =0; i<n_points;i++)
-    {
-        //fetch kernel vale from kernel cache
-        //+ n_points as -npoints is at 0
-        kernel[i] = kernelCache[i - x_position + n_points];
-        //compute a weight for each kernel position
-        sum_kernel += kernel[i];
-    }
-    //apply weight to each kernel position to give more important value to the x that are around ower x
-    for(int i = 0;i<n_points;i++)
-        kernel[i] = kernel[i] / sum_kernel;
-    return applyKernel(n_points, x_position, kernel, y_values);
+/**
+ * @brief      make the actual kernel from the cached kernel and normalize it, for the current position, then apply the kernel (see below)
+ *
+ * @param[in]  kernelCache the previsously chached kernels
+ * @param[in]  n_points  The length of the future input array
+ * @param[in]  x_position postition of the y values that will be smoothed
+ * @param[in]  y_values[] the input array that will be filtered
+ *
+ * @return     smoothed y value at x_position
+ */
+float makeAndApplyKernelFromKernelCache(float kernelCache[], int n_points, int x_position, float y_values[]) {
+  //make array for the actual kernel for the given x point
+  float kernel[n_points] = {};
+  float sum_kernel = 0;
+  for (int i = 0; i < n_points; i++) {
+    //fetch kernel vale from kernel cache
+    //+ n_points as -npoints is at 0
+    kernel[i] = kernelCache[i - x_position + n_points];
+    //compute a weight for each kernel position
+    sum_kernel += kernel[i];
+  }
+  //apply weight to each kernel position to give more important value to the x that are around ower x
+  for (int i = 0; i < n_points; i++)
+    kernel[i] = kernel[i] / sum_kernel;
+  return applyKernel(n_points, x_position, kernel, y_values);
 }
 
-float applyKernel(int n_points, int x_position, float kernel[], float y_values[])
-{
-    float y_filtered = 0;
-    //apply filter to all the y values with the weighted kernel
-    for(int i = 0;i<n_points;i++) 
-        y_filtered += kernel[i] * y_values[i];
+/**
+ * @brief      apply the kernel for the element at x_position and return it
+ *
+ * @param[in]  n_points  The length of the future input array
+ * @param[in]  x_position postition of the y values that will be smoothed 
+ * @param[in]  kernel[] the gaussian
+ * @param[in]  y_values[] the input array that will be filtered
+ *
+ * @return     smoothed y value at x_position
+ */
+float applyKernel(int n_points, int x_position, float kernel[], float y_values[]) {
+  float y_filtered = 0;
+  //apply filter to all the y values with the weighted kernel
+  for (int i = 0; i < n_points; i++)
+    y_filtered += kernel[i] * y_values[i];
 
-    return y_filtered;
+  return y_filtered;
 }
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
 #error "Invalid model for current sensor."
 #endif
-
