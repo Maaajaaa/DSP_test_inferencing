@@ -79,6 +79,7 @@ ei::matrix_t outputMatrix(1,EI_CLASSIFIER_NN_INPUT_FRAME_SIZE);
 #define PIN        9 // for some reason the pin mapping does not exaxtly match that printed 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_RGBW + NEO_KHZ800);
 
+
 /* GRAPH PLOTTING (no Arduino IDE and cutecom support, only puttY confimred so far)--------------------------------------*/
 bool printGraph = false;
 int nonPrintCycles = 0;
@@ -90,8 +91,19 @@ int graphMaxLength = 100.0;
 #define SINGLE_CEPTRUM 1
 int ceptrumToShow = 0;
 
-
 int outputMode = SYMMETRIC_CASCADING;
+
+struct RGBColour{
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+};
+
+RGBColour pixelArray[NUMPIXELS];
+
+RGBColour pixelArrayOld[NUMPIXELS];
+
+float alphaLowPass = 0.6;
 
 /**
  * @brief      Arduino setup function
@@ -302,14 +314,16 @@ void loop()
       
       
     }
+    //make copy of pixel array (needed for filtering only)
+    std::copy(pixelArray, pixelArray+NUMPIXELS, pixelArrayOld);
     switch(outputMode){
       case LINE_CASCADING:
         //cascade
         for(int i=NUMPIXELS; i>0; i--){
-          pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+          pixelArray[i] = pixelArray[i-1];
         }
         //set 0th pixel
-        pixels.setPixelColor(0,rNew, gNew, bNew);
+        pixelArray[0] = {rNew, gNew, bNew};
       break;
 
       case SYMMETRIC_CASCADING:
@@ -317,16 +331,25 @@ void loop()
         int centerPixel = NUMPIXELS/2+1;
         //cneter to left cascading
         for(int i=NUMPIXELS; i>centerPixel; i--){
-          pixels.setPixelColor(i,pixels.getPixelColor(i-1));
+          pixelArray[i] = pixelArray[i-1];
+          //pixels.setPixelColor(i,pixels.getPixelColor(i-1));
         }
         //center to right cascading
         for(int i=0; i<centerPixel; i++){
-          pixels.setPixelColor(i,pixels.getPixelColor(i+1));
+          pixelArray[i] = pixelArray[i+1];
+          //pixels.setPixelColor(i,pixels.getPixelColor(i+1));
         }
         //set center pixel
-        pixels.setPixelColor(centerPixel,rNew, gNew, bNew);
+        pixelArray[centerPixel] = {rNew, gNew, bNew};
       break;
 
+    }
+    //apply filter and apply array to pixels
+    for(int i = 0; i<NUMPIXELS; i++){
+      //apply filter
+      RGBColour filteredCol = filterRGBColour(pixelArray[i], pixelArrayOld[i]);
+      //pixels.setPixelColor(i,pixelArray[i].r, pixelArray[i].g, pixelArray[i].b);
+      pixels.setPixelColor(i,filteredCol.r, filteredCol.g, filteredCol.b);
     }
     pixels.show();   // Send the updated pixel colors to the hardware.
 }
@@ -455,6 +478,24 @@ static void microphone_inference_end(void)
     free(inference.buffers[1]);
     free(sampleBuffer);
 }
+
+//Tf is the filter time constant
+//Ts ist the sampling time
+float lowPassFilter(float alpha, float y, float y_prev){
+  //based on simple FOC equation https://docs.simplefoc.com/low_pass_filter
+  // calculate the filtering 
+  //float alpha = Tf/(Tf + Ts);
+  return alpha*y_prev + (1.0f - alpha) * y;
+}
+
+RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast){
+  RGBColour rgbColour;
+  rgbColour.r = lowPassFilter(alphaLowPass, rgbColourCurrent.r, rgbColourLast.r);
+  rgbColour.g = lowPassFilter(alphaLowPass, rgbColourCurrent.g, rgbColourLast.g);
+  rgbColour.b = lowPassFilter(alphaLowPass, rgbColourCurrent.b, rgbColourLast.b);
+  return rgbColour;
+}
+
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
 #error "Invalid model for current sensor."
