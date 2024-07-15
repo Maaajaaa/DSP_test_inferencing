@@ -105,6 +105,13 @@ RGBColour pixelArrayOld[NUMPIXELS];
 
 float alphaLowPass = 0.6;
 
+#define SIGMA_FINAL_GAUSSIAN 0.2
+
+
+
+float kernelCache[2*NUMPIXELS];
+
+
 /**
  * @brief      Arduino setup function
  */
@@ -140,10 +147,8 @@ void setup()
     delay(50);
   }
 
-  
-
-  pixels.show();
-
+  //calculate kernelCache
+  computeKernelCache(kernelCache, NUMPIXELS, SIGMA_FINAL_GAUSSIAN);
   
   Serial.println("Edge Impulse Inferencing Demo");
 
@@ -317,6 +322,7 @@ void loop()
     //make copy of pixel array (needed for filtering only)
     std::copy(pixelArray, pixelArray+NUMPIXELS, pixelArrayOld);
     switch(outputMode){
+
       case LINE_CASCADING:
         //cascade
         for(int i=NUMPIXELS; i>0; i--){
@@ -345,11 +351,26 @@ void loop()
 
     }
     //apply filter and apply array to pixels
+    //caching arrays to use 3 separate 1d gaussian blur fliters
+    float reds[NUMPIXELS];
+    float greens[NUMPIXELS];
+    float blues[NUMPIXELS];
     for(int i = 0; i<NUMPIXELS; i++){
-      //apply filter
+      //apply low pass filter
       RGBColour filteredCol = filterRGBColour(pixelArray[i], pixelArrayOld[i]);
+      reds[i] = filteredCol.r;
+      greens[i] = filteredCol.g;
+      blues[i] = filteredCol.b;
+
       //pixels.setPixelColor(i,pixelArray[i].r, pixelArray[i].g, pixelArray[i].b);
-      pixels.setPixelColor(i,filteredCol.r, filteredCol.g, filteredCol.b);
+      //pixels.setPixelColor(i,filteredCol.r, filteredCol.g, filteredCol.b);
+    }
+
+    for(int i = 0; i<NUMPIXELS; i++){
+      int r = round(makeAndApplyKernelFromKernelCache(kernelCache,NUMPIXELS, i, reds));
+      int g = round(makeAndApplyKernelFromKernelCache(kernelCache,NUMPIXELS, i, greens));
+      int b = round(makeAndApplyKernelFromKernelCache(kernelCache,NUMPIXELS, i, blues));
+      pixels.setPixelColor(i,r,g,b);
     }
     pixels.show();   // Send the updated pixel colors to the hardware.
 }
@@ -488,6 +509,8 @@ float lowPassFilter(float alpha, float y, float y_prev){
   return alpha*y_prev + (1.0f - alpha) * y;
 }
 
+
+
 RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast){
   RGBColour rgbColour;
   rgbColour.r = lowPassFilter(alphaLowPass, rgbColourCurrent.r, rgbColourLast.r);
@@ -496,6 +519,50 @@ RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast){
   return rgbColour;
 }
 
+//Gaussian Blut 1D, based on https://github.com/Maaajaaa/Gaussian_filter_1D/ which is forked off of https://github.com/lchop/Gaussian_filter_1D_cpp
+
+void computeKernelCache(float *kernelCache, int n_points, float sigma)
+{
+    //Compute the kernel for the given x point
+    //calculate sigma² once to speed up calculation
+    float twoSigmaSquared = (2*pow(sigma,2));
+    for (int i =0; i<n_points*2;i++)
+    {
+        //Compute gaussian kernel
+        //kernel cache at 0 is -1*n_points
+        kernelCache[i] = exp(-(pow(-1*n_points + i,2) / twoSigmaSquared));
+    }
+    return;
+}
+
+float makeAndApplyKernelFromKernelCache(float kernelCache[], int n_points, int x_position, float y_values[])
+{
+    //make array for the actual kernel for the given x point
+    float kernel[n_points] = {};
+    float sum_kernel = 0;
+    for (int i =0; i<n_points;i++)
+    {
+        //fetch kernel vale from kernel cache
+        //+ n_points as -npoints is at 0
+        kernel[i] = kernelCache[i - x_position + n_points];
+        //compute a weight for each kernel position
+        sum_kernel += kernel[i];
+    }
+    //apply weight to each kernel position to give more important value to the x that are around ower x
+    for(int i = 0;i<n_points;i++)
+        kernel[i] = kernel[i] / sum_kernel;
+    return applyKernel(n_points, x_position, kernel, y_values);
+}
+
+float applyKernel(int n_points, int x_position, float kernel[], float y_values[])
+{
+    float y_filtered = 0;
+    //apply filter to all the y values with the weighted kernel
+    for(int i = 0;i<n_points;i++) 
+        y_filtered += kernel[i] * y_values[i];
+
+    return y_filtered;
+}
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
 #error "Invalid model for current sensor."
