@@ -241,26 +241,35 @@ void loop() {
         }
       }
 
-      if(!printGraph && i<20){
-        Serial.print(outputMatrix.buffer[i]);
-        Serial.print(" ");
-      } 
+  //relevant buffer area where the mfcc output is stored
+  int relevantBuferCols = mfe_buffer_size.cols;
 
-      //print graph bar
-      if(printGraph && nonPrintCycles >= printEvery){
-        for(int j = 0; j<round(graphMaxLength * outputMatrix.buffer[i]); j++){
-          Serial.print("▮");
-        }
-        Serial.println();
+  int firstThird, secondThird;
+  firstThird = 3;
+  secondThird = 5;
+
+
+  //print graph, can't be viewed in arduino viewer, but putty or cutecom do support the clear screen command
+  //stackoverflow.com/a/15559322
+  if (printGraph && nonPrintCycles >= printEvery) {
+    Serial.write(27);     //ESC
+    Serial.print("[2J");  //clear screen
+    Serial.write(27);     //ESC
+    Serial.print("[H");   //cursor to home
+  }
+  if (!printGraph) {
+    Serial.print("output: ");
+  }
+  for (int i = 0; i < relevantBuferCols; i++) {
+    //find maxima of the thrids of the spectrum
+    if (i < firstThird) {
+      if (outputMatrix.buffer[i] > rMax) {
+        rMax = outputMatrix.buffer[i];
+        rMaxIndex = i;
       }
-      if(i==ceptrumToShow && outputMode == SINGLE_CEPTRUM ){
-        for(int j = 0; j<NUMPIXELS; j++){  
-          if(j<= round(NUMPIXELS * outputMatrix.buffer[i])){
-            pixels.setPixelColor(j,255, 0, 0);
-          }else{
-            pixels.setPixelColor(j,0, 0, 0);
-          }
-        }
+    } else if (i < secondThird) {
+      if (outputMatrix.buffer[i] > gMax) {
+        gMax = outputMatrix.buffer[i];
         gMaxIndex = i;
       }
     } else {
