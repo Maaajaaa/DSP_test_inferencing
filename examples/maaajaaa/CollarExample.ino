@@ -91,6 +91,24 @@ int graphMaxLength = 100.0;
 #define SINGLE_CEPTRUM 1
 int ceptrumToShow = 0;
 
+/* Low-Pass Filter Constants --------------------------------------------------- */
+
+
+float alphaLowPass = 0.6;
+static bool debug_arduino_filtering = false;
+
+/* Gaussian Filter ------------------------------------------------------------- */
+//obtained from https://github.com/Maaajaaa/Gaussian_filter_1D
+#include <GaussianFilter1D.h>
+
+//start filter in cached mode to increase computation speed
+GaussianFilter1D gaussianFilter = GaussianFilter1D(true);
+
+#define SIGMA_FINAL_GAUSSIAN 0.2
+
+
+
+
 int outputMode = SYMMETRIC_CASCADING;
 
 struct RGBColour {
@@ -102,14 +120,6 @@ struct RGBColour {
 RGBColour pixelArray[NUMPIXELS];
 
 RGBColour pixelArrayOld[NUMPIXELS];
-
-float alphaLowPass = 0.6;
-
-#define SIGMA_FINAL_GAUSSIAN 0.2
-
-static bool debug_arduino_filtering = false;
-
-float kernelCache[2 * NUMPIXELS];
 
 /**
  * @brief      Arduino setup function
@@ -146,8 +156,9 @@ void setup() {
     delay(50);
   }
 
-  //calculate kernelCache
-  computeKernelCache(kernelCache, NUMPIXELS, SIGMA_FINAL_GAUSSIAN);
+
+  //calculate kernel for gaussian filter
+  gaussianFilter.begin(SIGMA_FINAL_GAUSSIAN);
 
   Serial.println("Edge Impulse Inferencing Demo");
 
@@ -196,50 +207,12 @@ void loop() {
         return;
     }*/
 
-    double rMax = -100.0;
-    int rMaxIndex = -1;
-    double gMax = -100.0;
-    int gMaxIndex = -1;
-    double bMax = -100.0;
-    int bMaxIndex = -1;
-
-    //relevant buffer area where the mfcc output is stored
-    int relevantBuferCols = mfe_buffer_size.cols;
-
-    int firstThird, secondThird;
-    firstThird =  3;
-    secondThird = 5;
-
-    
-    //print graph, can't be viewed in arduino viewer, but putty or cutecom do support the clear screen command
-    //stackoverflow.com/a/15559322
-    if(printGraph  && nonPrintCycles >= printEvery){
-      Serial.write(27); //ESC
-      Serial.print("[2J"); //clear screen
-      Serial.write(27); //ESC
-      Serial.print("[H"); //cursor to home
-    }
-    if(!printGraph){
-      Serial.print("output: ");
-    }
-    for(int i = 0; i < relevantBuferCols; i++){
-      //find maxima of the thrids of the spectrum
-      if(i<firstThird){
-        if(outputMatrix.buffer[i] > rMax){
-          rMax = outputMatrix.buffer[i];
-          rMaxIndex = i;
-        }
-      }else if(i<secondThird){
-        if(outputMatrix.buffer[i] > gMax){
-          gMax = outputMatrix.buffer[i];
-          gMaxIndex = i;
-        }
-      }else{
-        if(outputMatrix.buffer[i] > bMax){
-          bMax = outputMatrix.buffer[i];
-          bMaxIndex = i;
-        }
-      }
+  double rMax = -100.0;
+  int rMaxIndex = -1;
+  double gMax = -100.0;
+  int gMaxIndex = -1;
+  double bMax = -100.0;
+  int bMaxIndex = -1;
 
   //relevant buffer area where the mfcc output is stored
   int relevantBuferCols = mfe_buffer_size.cols;
@@ -383,17 +356,22 @@ void loop() {
   float blues[NUMPIXELS];
   for (int i = 0; i < NUMPIXELS; i++) {
     //apply low pass filter
-    RGBColour filteredCol = filterRGBColour(pixelArray[i], pixelArrayOld[i]);
+    RGBColour filteredCol = lowPassFilterRGB(pixelArray[i], pixelArrayOld[i]);
     reds[i] = filteredCol.r;
     greens[i] = filteredCol.g;
     blues[i] = filteredCol.b;
   }
 
+  //apply gaussian filter for each colour
+  gaussianFilter.filter(reds, NUMPIXELS);
+  gaussianFilter.filter(greens, NUMPIXELS);
+  gaussianFilter.filter(blues, NUMPIXELS);
+
   for (int i = 0; i < NUMPIXELS; i++) {
-    int r = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, reds));
-    int g = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, greens));
-    int b = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, blues));
-    pixels.setPixelColor(i, r, g, b);
+    //int r = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, reds));
+    //int g = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, greens));
+    //int b = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, blues));
+    pixels.setPixelColor(i, reds[i], greens[i], blues[i]);
   }
   pixels.show();  // Send the updated pixel colors to the hardware.
 }
@@ -529,7 +507,7 @@ float lowPassFilter(float alpha, float y, float y_prev) {
 
 
 
-RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast) {
+RGBColour lowPassFilterRGB(RGBColour rgbColourCurrent, RGBColour rgbColourLast) {
   RGBColour rgbColour;
   rgbColour.r = lowPassFilter(alphaLowPass, rgbColourCurrent.r, rgbColourLast.r);
   rgbColour.g = lowPassFilter(alphaLowPass, rgbColourCurrent.g, rgbColourLast.g);
@@ -537,73 +515,6 @@ RGBColour filterRGBColour(RGBColour rgbColourCurrent, RGBColour rgbColourLast) {
   return rgbColour;
 }
 
-//Gaussian Blut 1D, based on https://github.com/Maaajaaa/Gaussian_filter_1D/ which is forked off of https://github.com/lchop/Gaussian_filter_1D_cpp
-
-/**
- * @brief      Compute Kernel cache, this is used to later create kernels without needing to run the expensive exp and pow functions repeatedly
- *
- * @param[in]  n_points  The length of the future input array
- * @param[in]  sigma Sigma, standard deviation, paramter of gaussian distribution
- *
- * @return     { description_of_the_return_value }
- */
-void computeKernelCache(float *kernelCache, int n_points, float sigma) {
-  //Compute the kernel for the given x point
-  //calculate sigma² once to speed up calculation
-  float twoSigmaSquared = (2 * pow(sigma, 2));
-  for (int i = 0; i < n_points * 2; i++) {
-    //Compute gaussian kernel
-    //kernel cache at 0 is -1*n_points
-    kernelCache[i] = exp(-(pow(-1 * n_points + i, 2) / twoSigmaSquared));
-  }
-  return;
-}
-
-/**
- * @brief      make the actual kernel from the cached kernel and normalize it, for the current position, then apply the kernel (see below)
- *
- * @param[in]  kernelCache the previsously chached kernels
- * @param[in]  n_points  The length of the future input array
- * @param[in]  x_position postition of the y values that will be smoothed
- * @param[in]  y_values[] the input array that will be filtered
- *
- * @return     smoothed y value at x_position
- */
-float makeAndApplyKernelFromKernelCache(float kernelCache[], int n_points, int x_position, float y_values[]) {
-  //make array for the actual kernel for the given x point
-  float kernel[n_points] = {};
-  float sum_kernel = 0;
-  for (int i = 0; i < n_points; i++) {
-    //fetch kernel vale from kernel cache
-    //+ n_points as -npoints is at 0
-    kernel[i] = kernelCache[i - x_position + n_points];
-    //compute a weight for each kernel position
-    sum_kernel += kernel[i];
-  }
-  //apply weight to each kernel position to give more important value to the x that are around ower x
-  for (int i = 0; i < n_points; i++)
-    kernel[i] = kernel[i] / sum_kernel;
-  return applyKernel(n_points, x_position, kernel, y_values);
-}
-
-/**
- * @brief      apply the kernel for the element at x_position and return it
- *
- * @param[in]  n_points  The length of the future input array
- * @param[in]  x_position postition of the y values that will be smoothed 
- * @param[in]  kernel[] the gaussian
- * @param[in]  y_values[] the input array that will be filtered
- *
- * @return     smoothed y value at x_position
- */
-float applyKernel(int n_points, int x_position, float kernel[], float y_values[]) {
-  float y_filtered = 0;
-  //apply filter to all the y values with the weighted kernel
-  for (int i = 0; i < n_points; i++)
-    y_filtered += kernel[i] * y_values[i];
-
-  return y_filtered;
-}
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
 #error "Invalid model for current sensor."
