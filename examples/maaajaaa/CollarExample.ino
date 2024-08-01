@@ -193,20 +193,11 @@ void loop() {
   signal.get_data = &microphone_audio_signal_get_data;
   ei_impulse_result_t result = { 0 };
 
-  //EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
-
-  //Serial.println(ei_default_impulse.impulse->dsp_blocks[0].n_output_features);
-
   if (!outputMatrix.buffer) {
     ei_printf("allocation of output matrix failed\n");
   }
   run_mfcc_maaajaaa(&signal, &outputMatrix, debug_nn);
-
-  /*if (r != EI_IMPULSE_OK) {
-        ei_printf("ERR: Failed to run classifier (%d)\n", r);
-        return;
-    }*/
-
+  
   double rMax = -100.0;
   int rMaxIndex = -1;
   double gMax = -100.0;
@@ -368,9 +359,6 @@ void loop() {
   gaussianFilter.filter(blues, NUMPIXELS);
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    //int r = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, reds));
-    //int g = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, greens));
-    //int b = round(makeAndApplyKernelFromKernelCache(kernelCache, NUMPIXELS, i, blues));
     pixels.setPixelColor(i, reds[i], greens[i], blues[i]);
   }
   pixels.show();  // Send the updated pixel colors to the hardware.
