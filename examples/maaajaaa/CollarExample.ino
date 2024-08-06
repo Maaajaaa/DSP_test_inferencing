@@ -98,6 +98,8 @@ float alphaLowPass = 0.6;
 static bool debug_arduino_filtering = false;
 
 /* Gaussian Filter ------------------------------------------------------------- */
+
+
 //obtained from https://github.com/Maaajaaa/Gaussian_filter_1D
 #include <GaussianFilter1D.h>
 
@@ -106,7 +108,33 @@ GaussianFilter1D gaussianFilter = GaussianFilter1D(true);
 
 #define SIGMA_FINAL_GAUSSIAN 0.2
 
+/* Rolling Average ---------------------------------------------------------------*/
 
+// should be around 2-3 seconds
+int ravSamplesize = 60;
+
+//lets stat with all values high so we can use the output directly for gain adjustment
+float rollingPeakAvg = 128.0;
+
+
+//increase gain when the average drops below this
+float minimumAverage = 50.0;
+float maximumAverage = 150.0;
+
+int gain = 128;
+int gainHysteresis = 20;
+
+float inputScalar = 0.6;
+float inputScalarHysteresis = 0.2;
+float inputScalarMin = 0.5;
+float inputScalarMax = 4.0;
+
+
+int numCycles = 0;
+
+//obtained from PDM docs https://docs.arduino.cc/learn/built-in-libraries/pdm/#setgain
+const int maxGain = 255;
+const int minGain = 0;
 
 
 int outputMode = SYMMETRIC_CASCADING;
@@ -125,6 +153,8 @@ RGBColour pixelArrayOld[NUMPIXELS];
  * @brief      Arduino setup function
  */
 void setup() {
+
+  //pinMode()
 
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -222,7 +252,7 @@ void loop() {
     Serial.print("[H");   //cursor to home
   }
   if (!printGraph) {
-    Serial.print("output: ");
+    //Serial.print("output: ");
   }
   for (int i = 0; i < relevantBuferCols; i++) {
     //find maxima of the thrids of the spectrum
@@ -244,8 +274,8 @@ void loop() {
     }
 
     if (!printGraph && i < 20) {
-      Serial.print(outputMatrix.buffer[i]);
-      Serial.print(" ");
+      //Serial.print(outputMatrix.buffer[i]);
+      //Serial.print(" ");
     }
 
     //print graph bar
@@ -275,9 +305,9 @@ void loop() {
   }
 
   //calculate new 8-bit rbg values, assuming mfcc output is normed to 0..1
-  int rNew = pow(rMax, 2) * 0.6;
-  int gNew = pow(gMax, 2) * 0.6;
-  int bNew = pow(bMax, 2) * 0.6;
+  int rNew = pow(rMax, 2) * inputScalar;
+  int gNew = pow(gMax, 2) * inputScalar;
+  int bNew = pow(bMax, 2) * inputScalar;
 
   if (rMax < 0.4) {
     rNew = 0;
@@ -362,6 +392,42 @@ void loop() {
     pixels.setPixelColor(i, reds[i], greens[i], blues[i]);
   }
   pixels.show();  // Send the updated pixel colors to the hardware.
+
+  //gain adjustment
+  //add new values to rolling average
+  updateRollingAverage(sqrt(rNew*rNew + gNew*gNew + bNew*bNew));
+  Serial.print("Rolling average: ");
+  Serial.print(rollingPeakAvg);
+  Serial.print(" gain: ");
+  Serial.print(gain);
+  Serial.print(" inputScalar: ");
+  Serial.println(inputScalar);
+  if(rollingPeakAvg < minimumAverage){
+    gain += gainHysteresis;
+    if(gain > maxGain){
+      gain = maxGain;
+      inputScalar += inputScalarHysteresis;
+      if(inputScalar > inputScalarMax){
+        inputScalar = inputScalarMax;
+      }
+    }
+    Serial.print("increasing gain to: ");
+    Serial.println(gain);
+    //reset avg to take some time for adjustment
+    rollingPeakAvg = 128.0;
+  }
+
+  if(rollingPeakAvg > maximumAverage){
+    gain -= gainHysteresis;
+    if(gain < minGain){
+      gain = minGain;
+      inputScalar = inputScalarMin;
+    }
+    Serial.print("decreasing gain to: ");
+    Serial.println(gain);
+    //reset avg to take some time for adjustment
+    rollingPeakAvg = 128.0;
+  }
 }
 
 /**
@@ -501,6 +567,12 @@ RGBColour lowPassFilterRGB(RGBColour rgbColourCurrent, RGBColour rgbColourLast) 
   rgbColour.g = lowPassFilter(alphaLowPass, rgbColourCurrent.g, rgbColourLast.g);
   rgbColour.b = lowPassFilter(alphaLowPass, rgbColourCurrent.b, rgbColourLast.b);
   return rgbColour;
+}
+
+float updateRollingAverage(float newVal){
+  rollingPeakAvg -= rollingPeakAvg / ravSamplesize;
+  rollingPeakAvg += newVal / ravSamplesize;
+  return rollingPeakAvg;
 }
 
 
