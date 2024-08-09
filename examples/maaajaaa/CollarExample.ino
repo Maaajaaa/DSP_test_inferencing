@@ -137,6 +137,38 @@ const int maxGain = 255;
 const int minGain = 0;
 
 
+/* Battery charging and measuring settings ------------------------------------------ */
+
+#include <ArduinoBLE.h>
+
+ // Bluetooth® Low Energy Battery Service
+BLEService batteryService("180F");
+
+// Bluetooth® Low Energy Battery Level Characteristic
+BLEUnsignedCharCharacteristic batteryLevelChar("2A19",  // standard 16-bit characteristic UUID
+    BLERead | BLENotify); // remote clients will be able to get notifications if this characteristic changes
+BLEStringCharacteristic stringcharacteristic("2dca", BLERead, 31);
+
+long previousMillisBatteryUpdate = 0;  // last time the battery level was checked, in ms
+
+
+#define ENABLE_BATTERY_METER 1
+#define PIN_BATTERY_CHARGE_SPEED_PIN P0_13
+#define PIN_CHARGING_INV P0_17
+//set to 1 for 50mA, 0 for 100mA charging current
+#define BATTERY_SLOW_CHARGE 0
+
+float batteryOutput = 0;
+
+// Voltage divider circuit (Should tune R1 in software if possible)
+const uint16_t R1 = 10000; // Originally 1M ohm
+const uint16_t R2 = 510;  // 510K ohm
+
+//number of samples for ADC
+int collectedBatterySamples = 0;
+const uint8_t targetBatteryADCSamples = 10;
+float batteryADCSum = 0;
+
 int outputMode = SYMMETRIC_CASCADING;
 
 struct RGBColour {
@@ -153,11 +185,46 @@ RGBColour pixelArrayOld[NUMPIXELS];
  * @brief      Arduino setup function
  */
 void setup() {
+  #ifdef ENABLE_BATTERY_METER
 
-  //pinMode()
+    //pinMode(P0_31, INPUT);    //Battery Voltage monitoring pin
+    // Set the analog reference to 2.4V
+    analogReference(AR_INTERNAL2V4);
+    // default 10uS
+    analogAcquisitionTime(AT_40_US); 
+    //set to 12-bit input mode
+    analogReadResolution(12);
+    //enable the adc
+    pinMode(PIN_VBAT_ENABLE, OUTPUT);
+    digitalWrite(PIN_VBAT_ENABLE, LOW); // VBAT read enable
+    analogRead(PIN_VBAT);
+
+    //bluetooth init
+    /* Set a local name for the Bluetooth® Low Energy device
+     This name will appear in advertising packets
+     and can be used by remote devices to identify this Bluetooth® Low Energy device
+     The name can be changed but maybe be truncated based on space left in advertisement packet
+    */
+    BLE.begin();
+    BLE.setLocalName("BatteryMonitor");
+    BLE.setAdvertisedService(batteryService); // add the service UUID
+    batteryService.addCharacteristic(stringcharacteristic); // add the battery level characteristic
+    BLE.addService(batteryService); // Add the battery service
+    char* stringCharValue = new char[32];
+    stringCharValue = "string";
+    stringcharacteristic.writeValue(stringCharValue);
+    BLE.advertise();
+
+  #endif
+
+  //set charge speed 
+  pinMode(PIN_BATTERY_CHARGE_SPEED_PIN, OUTPUT);
+  digitalWrite(PIN_BATTERY_CHARGE_SPEED_PIN, BATTERY_SLOW_CHARGE);
 
   // put your setup code here, to run once:
   Serial.begin(115200);
+  //while(!Serial)
+  //  ;
   //initialize and test neoPixel
 
   if (NUMPIXELS % 2 != 1 && outputMode == SYMMETRIC_CASCADING) {
@@ -184,6 +251,32 @@ void setup() {
     }
     pixels.show();
     delay(50);
+  }
+
+  pixels.clear();
+
+  Serial.print("charge pin: ");
+  Serial.println(digitalRead(PIN_CHARGING_INV) );
+
+  while(!digitalRead(PIN_CHARGING_INV) /*&& !Serial*/){
+
+
+    int vbatt = analogRead(PIN_VBAT);
+    float batteryVoltage = (2.961 * 2.4 * vbatt) / 4096;
+    float maxVoltage = 4.2;
+    float minVoltage = 3.2;
+    float batteryLevel = (batteryVoltage-minVoltage)/(maxVoltage - minVoltage);
+
+    Serial.print("charging ");
+    Serial.print(NUMPIXELS * ((batteryVoltage-minVoltage)/(maxVoltage - minVoltage)));
+    Serial.print(" / ");
+    Serial.println(NUMPIXELS);
+    pixels.setPixelColor(0, 50, 0, 0);
+    for (int i = (NUMPIXELS-1) * batteryLevel; i > 0; i--) {
+      pixels.setPixelColor(i, 2, 0, 0);
+    }
+    pixels.show();
+    delay(5000);
   }
 
 
@@ -396,12 +489,12 @@ void loop() {
   //gain adjustment
   //add new values to rolling average
   updateRollingAverage(sqrt(rNew*rNew + gNew*gNew + bNew*bNew));
-  Serial.print("Rolling average: ");
+  /*Serial.print("Rolling average: ");
   Serial.print(rollingPeakAvg);
   Serial.print(" gain: ");
   Serial.print(gain);
   Serial.print(" inputScalar: ");
-  Serial.println(inputScalar);
+  Serial.println(inputScalar);*/
   if(rollingPeakAvg < minimumAverage){
     gain += gainHysteresis;
     if(gain > maxGain){
@@ -427,6 +520,12 @@ void loop() {
     Serial.println(gain);
     //reset avg to take some time for adjustment
     rollingPeakAvg = 128.0;
+  }
+
+  BLEDevice central = BLE.central();
+  if(central.connected() && millis()- previousMillisBatteryUpdate >= 1000){
+    previousMillisBatteryUpdate = millis();
+    updateBatteryLevel();
   }
 }
 
@@ -573,6 +672,29 @@ float updateRollingAverage(float newVal){
   rollingPeakAvg -= rollingPeakAvg / ravSamplesize;
   rollingPeakAvg += newVal / ravSamplesize;
   return rollingPeakAvg;
+}
+
+void updateBatteryLevel() {
+  /* Read the current voltage level on the A0 analog input pin.
+     This is used here to simulate the charge level of a battery.
+  */
+  int vbatt = analogRead(PIN_VBAT);
+  float batteryVoltage = (2.961 * 2.4 * vbatt) / 4096;
+
+  String batteryString;
+  batteryString += String("Bat-Volts: ");
+  batteryString += String(batteryVoltage);
+  batteryString += String(" V");
+
+  if(digitalRead(PIN_CHARGING_INV)){
+    batteryString += String(", discharging");
+  }else{
+    batteryString += String(", charging");
+  }
+
+  char* outString = new char[32];
+  batteryString.toCharArray(outString, 31);
+  stringcharacteristic.writeValue(outString);
 }
 
 
