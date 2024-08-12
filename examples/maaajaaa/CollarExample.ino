@@ -158,7 +158,10 @@ long previousMillisBatteryUpdate = 0;  // last time the battery level was checke
 //set to 1 for 50mA, 0 for 100mA charging current
 #define BATTERY_SLOW_CHARGE 0
 
-float batteryOutput = 0;
+//battery performance
+const float maxVoltage = 4.3;
+const float minVoltage = 3.2;
+
 
 // Voltage divider circuit (Should tune R1 in software if possible)
 const uint16_t R1 = 10000; // Originally 1M ohm
@@ -167,7 +170,7 @@ const uint16_t R2 = 510;  // 510K ohm
 //number of samples for ADC
 int collectedBatterySamples = 0;
 const uint8_t targetBatteryADCSamples = 10;
-float batteryADCSum = 0;
+float batteryADCRollingAvg = 0;
 
 int outputMode = SYMMETRIC_CASCADING;
 
@@ -180,6 +183,8 @@ struct RGBColour {
 RGBColour pixelArray[NUMPIXELS];
 
 RGBColour pixelArrayOld[NUMPIXELS];
+
+void updateBatteryLevel(bool);
 
 /**
  * @brief      Arduino setup function
@@ -255,30 +260,6 @@ void setup() {
 
   pixels.clear();
 
-  Serial.print("charge pin: ");
-  Serial.println(digitalRead(PIN_CHARGING_INV) );
-
-  while(!digitalRead(PIN_CHARGING_INV) /*&& !Serial*/){
-
-
-    int vbatt = analogRead(PIN_VBAT);
-    float batteryVoltage = (2.961 * 2.4 * vbatt) / 4096;
-    float maxVoltage = 4.2;
-    float minVoltage = 3.2;
-    float batteryLevel = (batteryVoltage-minVoltage)/(maxVoltage - minVoltage);
-
-    Serial.print("charging ");
-    Serial.print(NUMPIXELS * ((batteryVoltage-minVoltage)/(maxVoltage - minVoltage)));
-    Serial.print(" / ");
-    Serial.println(NUMPIXELS);
-    pixels.setPixelColor(0, 50, 0, 0);
-    for (int i = (NUMPIXELS-1) * batteryLevel; i > 0; i--) {
-      pixels.setPixelColor(i, 2, 0, 0);
-    }
-    pixels.show();
-    delay(5000);
-  }
-
 
   //calculate kernel for gaussian filter
   gaussianFilter.begin(SIGMA_FINAL_GAUSSIAN);
@@ -304,7 +285,31 @@ void setup() {
 /**
  * @brief      Arduino main function. Runs the inferencing loop.
  */
-void loop() {
+void loop(){
+  if(!digitalRead(PIN_CHARGING_INV) && !Serial){
+    updateBatteryLevel(true);
+  }else{
+    displayAnimation();
+    updateBatteryLevel(false);
+  }
+}
+
+void displayBatteryStatus(){
+  if(millis() - previousMillisBatteryUpdate >= 2000){
+    pixels.clear();
+    pixels.setPixelColor(0, 2, 0, 0);
+    for (int i = (NUMPIXELS-1) * getBatteryLevel(); i > 0; i--) {
+      //don't overrun in case we measure a voltage about our expected maximum voltage
+      if(i>NUMPIXELS-1){
+        i = NUMPIXELS-1;
+      }
+      pixels.setPixelColor(i, 2, 0, 0);
+    }
+    pixels.show();  
+  }  
+}
+void displayAnimation() {
+  
   bool m = microphone_inference_record();
   if (!m) {
     ei_printf("ERR: Failed to record audio...\n");
@@ -521,12 +526,6 @@ void loop() {
     //reset avg to take some time for adjustment
     rollingPeakAvg = 128.0;
   }
-
-  BLEDevice central = BLE.central();
-  if(central.connected() && millis()- previousMillisBatteryUpdate >= 1000){
-    previousMillisBatteryUpdate = millis();
-    updateBatteryLevel();
-  }
 }
 
 /**
@@ -674,27 +673,55 @@ float updateRollingAverage(float newVal){
   return rollingPeakAvg;
 }
 
-void updateBatteryLevel() {
+float updateRollingBatteryAverage(){
+  float newVal = analogRead(PIN_VBAT);
+  if(collectedBatterySamples >= targetBatteryADCSamples){ 
+    batteryADCRollingAvg -= batteryADCRollingAvg / targetBatteryADCSamples;
+  }else{
+    collectedBatterySamples++;
+  }
+  batteryADCRollingAvg += newVal / targetBatteryADCSamples;
+  return batteryADCRollingAvg;
+}
+
+void updateBatteryLevel(bool showAnimation = false) {
   /* Read the current voltage level on the A0 analog input pin.
      This is used here to simulate the charge level of a battery.
   */
-  int vbatt = analogRead(PIN_VBAT);
-  float batteryVoltage = (2.961 * 2.4 * vbatt) / 4096;
+  //read the adc and store its value
+  updateRollingBatteryAverage();
+  //if update on BLE characteristics is due, run that
+  if(millis()- previousMillisBatteryUpdate >= 2000){
 
-  String batteryString;
-  batteryString += String("Bat-Volts: ");
-  batteryString += String(batteryVoltage);
-  batteryString += String(" V");
+    displayBatteryStatus();
+    previousMillisBatteryUpdate = millis();
+    if(BLE.central().connected()){
+      String batteryString;
+      batteryString += String(getBatteryVoltage());
+      batteryString += String(" V ");
+      batteryString += String(getBatteryLevel()*100);
+      batteryString += String(" %");
 
-  if(digitalRead(PIN_CHARGING_INV)){
-    batteryString += String(", discharging");
-  }else{
-    batteryString += String(", charging");
+      if(digitalRead(PIN_CHARGING_INV)){
+        batteryString += String(", discharging");
+      }else{
+        batteryString += String(", charging");
+      }
+
+      char* outString = new char[32];
+      batteryString.toCharArray(outString, 31);
+      stringcharacteristic.writeValue(outString);
+    }    
   }
+}
 
-  char* outString = new char[32];
-  batteryString.toCharArray(outString, 31);
-  stringcharacteristic.writeValue(outString);
+float getBatteryVoltage(){
+  float vbatt = batteryADCRollingAvg;//analogRead(PIN_VBAT);
+  return (2.961 * 2.4 * vbatt) / 4096;
+}
+
+float getBatteryLevel(){
+  return (getBatteryVoltage()-minVoltage)/(maxVoltage - minVoltage);
 }
 
 
