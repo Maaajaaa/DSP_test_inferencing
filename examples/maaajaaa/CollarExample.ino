@@ -138,6 +138,12 @@ const int minGain = 0;
 
 
 /* Battery charging and measuring settings ------------------------------------------ */
+//can be found at https://github.com/Maaajaaa/SeeedNrf52480Battery/
+
+#include <SeeedNrf52480Battery.h>
+SeeedNrf52480Battery battery = SeeedNrf52480Battery();
+unsigned long lastChange = 0;
+
 
 #include <ArduinoBLE.h>
 
@@ -149,28 +155,7 @@ BLEUnsignedCharCharacteristic batteryLevelChar("2A19",  // standard 16-bit chara
     BLERead | BLENotify); // remote clients will be able to get notifications if this characteristic changes
 BLEStringCharacteristic stringcharacteristic("2dca", BLERead, 31);
 
-long previousMillisBatteryUpdate = 0;  // last time the battery level was checked, in ms
-
-
-#define ENABLE_BATTERY_METER 1
-#define PIN_BATTERY_CHARGE_SPEED_PIN P0_13
-#define PIN_CHARGING_INV P0_17
-//set to 1 for 50mA, 0 for 100mA charging current
-#define BATTERY_SLOW_CHARGE 0
-
-//battery performance
-const float maxVoltage = 4.3;
-const float minVoltage = 3.2;
-
-
-// Voltage divider circuit (Should tune R1 in software if possible)
-const uint16_t R1 = 10000; // Originally 1M ohm
-const uint16_t R2 = 510;  // 510K ohm
-
-//number of samples for ADC
-int collectedBatterySamples = 0;
-const uint8_t targetBatteryADCSamples = 10;
-float batteryADCRollingAvg = 0;
+unsigned long previousMillisBatteryUpdate = 0;  // last time the battery level was checked, in ms
 
 int outputMode = SYMMETRIC_CASCADING;
 
@@ -191,18 +176,8 @@ void updateBatteryLevel(bool);
  */
 void setup() {
   #ifdef ENABLE_BATTERY_METER
-
-    //pinMode(P0_31, INPUT);    //Battery Voltage monitoring pin
-    // Set the analog reference to 2.4V
-    analogReference(AR_INTERNAL2V4);
-    // default 10uS
-    analogAcquisitionTime(AT_40_US); 
-    //set to 12-bit input mode
-    analogReadResolution(12);
-    //enable the adc
-    pinMode(PIN_VBAT_ENABLE, OUTPUT);
-    digitalWrite(PIN_VBAT_ENABLE, LOW); // VBAT read enable
-    analogRead(PIN_VBAT);
+    battery.setChargeCurrent100mA();
+    attachInterrupt(digitalPinToInterrupt(PIN_CHARGING_INV), chargeUpdate, CHANGE);
 
     //bluetooth init
     /* Set a local name for the Bluetooth® Low Energy device
@@ -221,10 +196,6 @@ void setup() {
     BLE.advertise();
 
   #endif
-
-  //set charge speed 
-  pinMode(PIN_BATTERY_CHARGE_SPEED_PIN, OUTPUT);
-  digitalWrite(PIN_BATTERY_CHARGE_SPEED_PIN, BATTERY_SLOW_CHARGE);
 
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -286,7 +257,8 @@ void setup() {
  * @brief      Arduino main function. Runs the inferencing loop.
  */
 void loop(){
-  if(!digitalRead(PIN_CHARGING_INV) && !Serial){
+  //if charging, not Serial connected and charging since at least 100ms (to fix some flickering)
+  if(battery.isCharging() && !Serial && millis()-lastChange > 100){
     updateBatteryLevel(true);
   }else{
     displayAnimation();
@@ -294,11 +266,15 @@ void loop(){
   }
 }
 
+void chargeUpdate(){
+  lastChange = millis();
+}
+
 void displayBatteryStatus(){
   if(millis() - previousMillisBatteryUpdate >= 2000){
     pixels.clear();
     pixels.setPixelColor(0, 2, 0, 0);
-    for (int i = (NUMPIXELS-1) * getBatteryLevel(); i > 0; i--) {
+    for (int i = (NUMPIXELS-1) * battery.getPercentage()/100.0; i > 0; i--) {
       //don't overrun in case we measure a voltage about our expected maximum voltage
       if(i>NUMPIXELS-1){
         i = NUMPIXELS-1;
@@ -308,6 +284,7 @@ void displayBatteryStatus(){
     pixels.show();  
   }  
 }
+
 void displayAnimation() {
   
   bool m = microphone_inference_record();
@@ -673,23 +650,12 @@ float updateRollingAverage(float newVal){
   return rollingPeakAvg;
 }
 
-float updateRollingBatteryAverage(){
-  float newVal = analogRead(PIN_VBAT);
-  if(collectedBatterySamples >= targetBatteryADCSamples){ 
-    batteryADCRollingAvg -= batteryADCRollingAvg / targetBatteryADCSamples;
-  }else{
-    collectedBatterySamples++;
-  }
-  batteryADCRollingAvg += newVal / targetBatteryADCSamples;
-  return batteryADCRollingAvg;
-}
-
 void updateBatteryLevel(bool showAnimation = false) {
   /* Read the current voltage level on the A0 analog input pin.
      This is used here to simulate the charge level of a battery.
   */
   //read the adc and store its value
-  updateRollingBatteryAverage();
+  battery.updateADCReading();
   //if update on BLE characteristics is due, run that
   if(millis()- previousMillisBatteryUpdate >= 2000){
 
@@ -697,9 +663,9 @@ void updateBatteryLevel(bool showAnimation = false) {
     previousMillisBatteryUpdate = millis();
     if(BLE.central().connected()){
       String batteryString;
-      batteryString += String(getBatteryVoltage());
+      batteryString += String(battery.getVoltage());
       batteryString += String(" V ");
-      batteryString += String(getBatteryLevel()*100);
+      batteryString += String(battery.getPercentage());
       batteryString += String(" %");
 
       if(digitalRead(PIN_CHARGING_INV)){
@@ -714,16 +680,6 @@ void updateBatteryLevel(bool showAnimation = false) {
     }    
   }
 }
-
-float getBatteryVoltage(){
-  float vbatt = batteryADCRollingAvg;//analogRead(PIN_VBAT);
-  return (2.961 * 2.4 * vbatt) / 4096;
-}
-
-float getBatteryLevel(){
-  return (getBatteryVoltage()-minVoltage)/(maxVoltage - minVoltage);
-}
-
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
 #error "Invalid model for current sensor."
