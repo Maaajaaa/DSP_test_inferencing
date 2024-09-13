@@ -671,10 +671,7 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
     if (classifier_continuous_features_written >= impulse->nn_input_frame_size) {
         dsp_start_us = ei_read_timer_us();
 
-        uint32_t block_num = impulse->dsp_blocks_size + impulse->learning_blocks_size;
-
-        // have it outside of the loop to avoid going out of scope
-        std::unique_ptr<ei::matrix_t> *matrix_ptrs = new std::unique_ptr<ei::matrix_t>[block_num];
+        //uint32_t block_num = impulse->dsp_blocks_size + impulse->learning_blocks_size
 
         out_features_index = 0;
         // iterate over our one dsp block
@@ -712,10 +709,8 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
                 ei_printf(" ");
             }
         }
-
         //handle->state.reset();
         ei_impulse_result_t result = {0};
-
         delete[] matrix_ptrs;
     }else{
         ei_printf("WARNING classifier not continuous");
