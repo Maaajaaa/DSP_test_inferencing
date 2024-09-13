@@ -1368,7 +1368,7 @@ __attribute__((unused)) void calc_cepstral_mean_and_var_normalization_mfcc(ei_ma
     matrix->cols = config->num_cepstral;
 
     // cepstral mean and variance normalization
-    int ret = speechpy::processing::cmvnw(matrix, config->win_size, true, true);
+    int ret = speechpy::processing::cmvnw(matrix, config->win_size, false, false);
     if (ret != EIDSP_OK) {
         ei_printf("ERR: cmvnw failed (%d)\n", ret);
         return;

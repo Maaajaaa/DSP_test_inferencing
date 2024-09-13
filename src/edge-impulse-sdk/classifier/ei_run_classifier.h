@@ -507,8 +507,8 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
         result->timing.dsp = (int)(result->timing.dsp_us / 1000);
 
 
-        ei_printf("\r\nFeatures (%d ms.): ", result->timing.dsp);
         if(debug){
+            ei_printf("\r\nFeatures (%d ms.): ", result->timing.dsp);
             ei_printf("number of filtered features: %i rows: %i", features[0].matrix->cols,  features[0].matrix->rows);
             for (size_t ix = 0; ix < features[0].matrix->cols; ix++) {
                 ei_printf_float( features[0].matrix->buffer[ix]);
@@ -599,7 +599,7 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
         return EI_IMPULSE_ALLOC_FAILED;
     }
 
-    memset(output_matrix, 0, sizeof(ei::matrix_t));
+    //memset(output_matrix, 0, sizeof(ei::matrix_t));
 
     uint64_t dsp_start_us = ei_read_timer_us();
     uint64_t timing_dsp_us = 0;
@@ -671,25 +671,14 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
     if (classifier_continuous_features_written >= impulse->nn_input_frame_size) {
         dsp_start_us = ei_read_timer_us();
 
-        //uint32_t block_num = impulse->dsp_blocks_size + impulse->learning_blocks_size;
-
-        // smart pointer to features array
-        //std::unique_ptr<ei_feature_t[]> features_ptr(new ei_feature_t[block_num]);
-        //ei_feature_t* features = features_ptr.get();
-        //memset(features, 0, sizeof(ei_feature_t) * block_num);
-
-        // have it outside of the loop to avoid going out of scope
-        //std::unique_ptr<ei::matrix_t> *matrix_ptrs = new std::unique_ptr<ei::matrix_t>[block_num];
+        //uint32_t block_num = impulse->dsp_blocks_size + impulse->learning_blocks_size
 
         out_features_index = 0;
-        // iterate over every dsp block and run normalization
-        //for (size_t ix = 0; ix < impulse->dsp_blocks_size; ix++) {
+        // iterate over our one dsp block
         ei_model_dsp_t block = impulse->dsp_blocks[0];
-        //matrix_ptrs[ix] = std::unique_ptr<ei::matrix_t>(new ei::matrix_t(1, block.n_output_features));
-        //features[ix].matrix = matrix_ptrs[ix].get();
-        //features[ix].blockId = block.blockId;
+        matrix_ptrs[0] = std::unique_ptr<ei::matrix_t>(new ei::matrix_t(1, block.n_output_features));
 
-        /* Create a copy of the matrix for normalization */
+        /* copy the data over into our output matrix */
         for (size_t m_ix = 0; m_ix < block.n_output_features; m_ix++) {
             output_matrix->buffer[m_ix] = static_features_matrix.buffer[out_features_index + m_ix];
         }
@@ -707,7 +696,6 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
             ei_printf("ERROR invalid block.extract_fn");
         }
         out_features_index += block.n_output_features;
-        //}
 
         timing_dsp_us += ei_read_timer_us() - dsp_start_us;
         int timing_dsp = (int)(timing_dsp_us / 1000);
@@ -721,12 +709,9 @@ int process_mfcc_maaajaaa(ei_impulse_handle_t *handle,
                 ei_printf(" ");
             }
         }
-
-         // copy the output
-        //for (size_t m_ix = 0; m_ix < impulse->dsp_blocks[0].n_output_features; m_ix++) {
-         //   output_matrix->buffer[m_ix] = features[0].matrix->buffer[m_ix];
-        //}
-
+        //handle->state.reset();
+        ei_impulse_result_t result = {0};
+        delete[] matrix_ptrs;
     }else{
         ei_printf("WARNING classifier not continuous");
     }
